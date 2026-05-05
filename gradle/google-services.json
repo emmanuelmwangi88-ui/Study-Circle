@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "782284439261",
+    "project_id": "study-circle-b0e80",
+    "storage_bucket": "study-circle-b0e80.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:782284439261:android:4bb219d1eeea6f65cb2534",
+        "android_client_info": {
+          "package_name": "com.company.studycircle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCQKjTX2rqQZyPYTCaWuoJQju3pNGmRfdk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
