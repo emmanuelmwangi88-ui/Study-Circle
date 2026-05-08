@@ -220,7 +220,9 @@ fun ResourceDetailScreen(
                 }
                 
                 Row(modifier = Modifier.padding(16.dp).align(Alignment.TopEnd), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { shareResource() }, modifier = Modifier.background(Color.Black.copy(alpha = 0.3f), CircleShape)) {
+                    IconButton(
+                        onClick = { shareResource() },
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.3f), CircleShape)) {
                         Icon(imageVector = Icons.Default.Share, contentDescription = "Share", tint = Color.White)
                     }
                     Spacer(Modifier.width(8.dp))

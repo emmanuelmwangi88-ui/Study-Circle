@@ -9,10 +9,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import com.deepseek.studycircle.navigation.AppNavHost
 import com.deepseek.studycircle.ui.theme.*
+import com.google.firebase.FirebaseApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Explicitly initialize Firebase to prevent crashes in some environments
+        FirebaseApp.initializeApp(this)
+
         setContent {
             StudyCircle {
                 AppNavHost()

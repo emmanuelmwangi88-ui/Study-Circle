@@ -1,6 +1,5 @@
 package com.deepseek.studycircle.screens.session
 
-import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -10,6 +9,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.material3.*
@@ -24,17 +25,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
+import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.Session
 import com.deepseek.studycircle.models.upcomingSessions
+import com.deepseek.studycircle.navigation.ROUTE_CREATE_SESSION
 import com.deepseek.studycircle.ui.theme.*
 
+/**
+ * SessionScreen displays all current and upcoming live study sessions.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionScreen(navController: NavHostController) {
+fun SessionScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
+    val dynamicSessions = userViewModel.allSessions
+    val currentUserId = userViewModel.userData.value?.uid
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -46,6 +55,15 @@ fun SessionScreen(navController: NavHostController) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = StudySurface)
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { navController.navigate(ROUTE_CREATE_SESSION) },
+                containerColor = StudyPrimary,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Start a new session")
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -56,31 +74,54 @@ fun SessionScreen(navController: NavHostController) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            val liveSessions = upcomingSessions.filter { it.isLive }
-            val scheduledSessions = upcomingSessions.filter { !it.isLive }
+            val allCombinedSessions = upcomingSessions + dynamicSessions
+
+            val liveSessions = allCombinedSessions.filter { it.isLive }
+            val scheduledSessions = allCombinedSessions.filter { !it.isLive }
 
             if (liveSessions.isNotEmpty()) {
                 item {
                     Text(
-                        "Ongoing Sessions",
+                        "Ongoing Study Sessions",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = StudyTextPrimary
                     )
                 }
                 items(liveSessions) { session ->
-                    LiveVideoCard(session)
+                    LiveVideoCard(
+                        session = session,
+                        navController = navController,
+                        isOwner = session.creatorId == currentUserId,
+                        onDelete = {
+                            userViewModel.deleteSession(session.id) { }
+                        }
+                    )
                 }
             }
 
-            item {
-                Text(
-                    "Upcoming Sessions",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = StudyTextPrimary,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+            if (scheduledSessions.isNotEmpty()) {
+                item {
+                    Text(
+                        "Scheduled",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = StudyTextPrimary,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(scheduledSessions) { session ->
+                    SessionCard(
+                        session = session,
+                        isOwner = session.creatorId == currentUserId,
+                        onDelete = {
+                            userViewModel.deleteSession(session.id) { }
+                        },
+                        onJoin = {
+                            navController.navigate("video_call/${session.id}")
+                        }
+                    )
+                }
             }
 
             if (scheduledSessions.isEmpty() && liveSessions.isEmpty()) {
@@ -89,18 +130,18 @@ fun SessionScreen(navController: NavHostController) {
                         Text(text = "No sessions found", color = StudyTextSecondary)
                     }
                 }
-            } else {
-                items(scheduledSessions) { session ->
-                    SessionCard(session)
-                }
             }
         }
     }
 }
 
 @Composable
-fun LiveVideoCard(session: Session) {
-    val context = LocalContext.current
+fun LiveVideoCard(
+    session: Session,
+    navController: NavHostController,
+    isOwner: Boolean,
+    onDelete: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.Black),
@@ -121,9 +162,9 @@ fun LiveVideoCard(session: Session) {
                         contentScale = ContentScale.Crop
                     )
                 }
-                
+
                 Surface(
-                    color = Color.Red,
+                    color = StudyAccentOrange,
                     shape = RoundedCornerShape(4.dp),
                     modifier = Modifier.padding(12.dp).align(Alignment.TopStart)
                 ) {
@@ -134,6 +175,15 @@ fun LiveVideoCard(session: Session) {
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
+                }
+
+                if (isOwner) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
+                    }
                 }
 
                 Box(
@@ -148,19 +198,16 @@ fun LiveVideoCard(session: Session) {
                     Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(32.dp))
                 }
             }
-            
+
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(session.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("with ${session.student}", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
-                
+                Text("Host: ${session.student}", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Button(
-                    onClick = { 
-                        if (session.zoomLink.isNotEmpty()) {
-                            val intent = Intent(Intent.ACTION_VIEW, session.zoomLink.toUri())
-                            context.startActivity(intent)
-                        }
+                    onClick = {
+                        navController.navigate("video_call/${session.id}")
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = StudyPrimary),
@@ -168,7 +215,7 @@ fun LiveVideoCard(session: Session) {
                 ) {
                     Icon(Icons.Default.VideoCall, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Join Zoom Session")
+                    Text("Join Session")
                 }
             }
         }
@@ -176,7 +223,12 @@ fun LiveVideoCard(session: Session) {
 }
 
 @Composable
-fun SessionCard(session: Session) {
+fun SessionCard(
+    session: Session,
+    isOwner: Boolean,
+    onDelete: () -> Unit,
+    onJoin: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = StudySurface),
@@ -201,37 +253,43 @@ fun SessionCard(session: Session) {
                         color = StudyTeal
                     )
                 }
+
+                if (isOwner) {
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.7f))
+                    }
+                }
             }
-            
+
             Spacer(modifier = Modifier.height(12.dp))
             Text(text = session.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = StudyTextPrimary)
             Text(text = "Tutor: ${session.student}", fontSize = 14.sp, color = StudyTextSecondary)
-            
+
             if (session.topic.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(text = "Topics: ${session.topic}", fontSize = 12.sp, color = StudyTextSecondary)
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
-                    onClick = { /* Details */ },
+                    onClick = onJoin,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = StudyPrimary)
                 ) {
-                    Text("Details", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Join", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
                 OutlinedButton(
-                    onClick = { /* Reschedule */ },
+                    onClick = { /* Details */ },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, StudyPrimary.copy(alpha = 0.2f))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, StudyPrimary.copy(alpha =.2f))
                 ) {
-                    Text("Reschedule", fontSize = 13.sp, color = StudyTextPrimary)
+                    Text("Details", fontSize = 13.sp, color = StudyTextPrimary)
                 }
             }
         }

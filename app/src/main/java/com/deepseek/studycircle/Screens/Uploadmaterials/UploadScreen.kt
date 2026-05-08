@@ -23,12 +23,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.rememberNavController
 import com.deepseek.studycircle.data.CreditCalculator
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.ui.theme.*
@@ -155,22 +153,38 @@ fun UploadMaterialScreen(navController: NavHostController, userViewModel: UserVi
                         isUploading = true
                         userViewModel.uploadFileToCloudinary(context, selectedFileUri!!) { url ->
                             if (url != null) {
-                                userViewModel.performTransaction(
-                                    type = CreditCalculator.TransactionType.UPLOAD,
-                                    description = "Uploaded: $title"
-                                ) { success ->
-                                    if (success) {
+                                // Save material metadata to database
+                                userViewModel.saveMaterial(title, category, description, url) { saved ->
+                                    if (saved) {
+                                        // Reward the user
+                                        userViewModel.performTransaction(
+                                            type = CreditCalculator.TransactionType.UPLOAD,
+                                            description = "Uploaded: $title"
+                                        ) { transSuccess ->
+                                            isUploading = false
+                                            if (transSuccess) {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar("Resource published! +$rewardAmount Credits")
+                                                    navController.popBackStack()
+                                                }
+                                            } else {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar("Resource published, but reward failed.")
+                                                    navController.popBackStack()
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        isUploading = false
                                         scope.launch {
-                                            snackbarHostState.showSnackbar("Resource published! +$rewardAmount Credits")
-                                            navController.popBackStack()
+                                            snackbarHostState.showSnackbar("Failed to save material info.")
                                         }
                                     }
-                                    isUploading = false
                                 }
                             } else {
                                 isUploading = false
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Upload failed. Please try again.")
+                                    snackbarHostState.showSnackbar("Upload failed. Please check your connection.")
                                 }
                             }
                         }

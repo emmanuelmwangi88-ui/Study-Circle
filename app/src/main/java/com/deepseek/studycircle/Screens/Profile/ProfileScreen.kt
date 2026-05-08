@@ -1,6 +1,7 @@
 package com.deepseek.studycircle.screens.profile
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -14,7 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,14 +35,18 @@ import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.BadgeItem
+import com.deepseek.studycircle.models.User
 import com.deepseek.studycircle.models.badges
 import com.deepseek.studycircle.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val user by userViewModel.userData
+    val snackbarHostState = remember { SnackbarHostState() }
     
     var showEditDialog by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf("") }
@@ -58,8 +62,8 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
 
     LaunchedEffect(user) {
         user?.let {
-            editedName = it.name
-            editedBio = it.bio
+            if (editedName.isEmpty()) editedName = it.name
+            if (editedBio.isEmpty()) editedBio = it.bio
         }
     }
 
@@ -97,6 +101,12 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                             Icon(imageVector = Icons.Default.Person, contentDescription = null, modifier = Modifier.size(50.dp))
                         }
                     }
+                    Text(
+                        text = "Tap to change photo",
+                        fontSize = 12.sp,
+                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp),
+                        color = StudyPrimary
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
                         value = editedName,
@@ -118,6 +128,10 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
             confirmButton = {
                 Button(
                     onClick = {
+                        if (editedName.isBlank()) {
+                            Toast.makeText(context, "Name cannot be empty", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
                         isUploading = true
                         if (selectedImageUri != null) {
                             userViewModel.uploadFileToCloudinary(context, selectedImageUri!!) { imageUrl ->
@@ -126,6 +140,9 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                                         if (success) {
                                             showEditDialog = false
                                             selectedImageUri = null
+                                            scope.launch { snackbarHostState.showSnackbar("Profile updated!") }
+                                        } else {
+                                            scope.launch { snackbarHostState.showSnackbar("Failed to update database.") }
                                         }
                                         isUploading = false
                                     }
@@ -137,6 +154,9 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                             userViewModel.updateUserProfile(context, editedName, editedBio, user?.imageUri ?: "") { success ->
                                 if (success) {
                                     showEditDialog = false
+                                    scope.launch { snackbarHostState.showSnackbar("Profile updated!") }
+                                } else {
+                                    scope.launch { snackbarHostState.showSnackbar("Failed to update database.") }
                                 }
                                 isUploading = false
                             }
@@ -160,6 +180,7 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Profile", fontWeight = FontWeight.Bold) },
@@ -169,13 +190,10 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showEditDialog = true }) {
-                        Icon(imageVector = Icons.Default.Accessibility, contentDescription = "Edit Profile")
-                        Column(
-                            modifier = Modifier.padding(end = 8.dp),
-                        ) {
-                            Text("Edit", fontWeight = FontWeight.Bold)
-                        }
+                    TextButton(onClick = { showEditDialog = true }) {
+                        Text("Edit", fontWeight = FontWeight.Bold,
+                            color = StudyPrimary,
+                            fontSize = 20.sp)
                     }
                 }
             )
@@ -183,8 +201,8 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
     ) { padding ->
         Column(
             modifier = Modifier
-                .fillMaxSize()
                 .padding(padding)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .background(color = StudyBackground)
                 .padding(16.dp)

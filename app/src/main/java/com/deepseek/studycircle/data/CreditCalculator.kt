@@ -9,14 +9,14 @@ import java.text.DecimalFormat
  */
 object CreditCalculator {
     // Credit Constants
-    const val DOWNLOAD_COST = 100
-    const val UPLOAD_REWARD = 50
-    const val TUTOR_SESSION_COST = 500
-    const val PEER_HELP_REWARD = 20
-    const val WELCOME_BONUS = 2000
-    const val REFERRAL_BONUS = 150
-    const val DAILY_LOGIN_BONUS = 10
-    const val STREAK_BONUS_MULTIPLIER = 5 // Bonus per day of streak
+    const val DOWNLOAD_COST = 100L
+    const val UPLOAD_REWARD = 50L
+    const val TUTOR_SESSION_COST = 500L
+    const val PEER_HELP_REWARD = 20L
+    const val WELCOME_BONUS = 2000L
+    const val REFERRAL_BONUS = 150L
+    const val DAILY_LOGIN_BONUS = 10L
+    const val STREAK_BONUS_MULTIPLIER = 5L // Bonus per day of streak
 
     enum class TransactionType(val description: String, val isExpense: Boolean) {
         DOWNLOAD("Resource Download", true),
@@ -34,7 +34,7 @@ object CreditCalculator {
      * Returns the credit change for a specific transaction type.
      * Gains are positive, costs are negative.
      */
-    fun getAmountForType(type: TransactionType, streakDays: Int = 0): Int {
+    fun getAmountForType(type: TransactionType, streakDays: Int = 0): Long {
         return when (type) {
             TransactionType.DOWNLOAD -> -DOWNLOAD_COST
             TransactionType.UPLOAD -> UPLOAD_REWARD
@@ -43,34 +43,15 @@ object CreditCalculator {
             TransactionType.SIGNUP_BONUS -> WELCOME_BONUS
             TransactionType.REFERRAL -> REFERRAL_BONUS
             TransactionType.DAILY_LOGIN -> DAILY_LOGIN_BONUS
-            TransactionType.STREAK_BONUS -> streakDays * STREAK_BONUS_MULTIPLIER
-            TransactionType.OTHER -> 0
+            TransactionType.STREAK_BONUS -> streakDays.toLong() * STREAK_BONUS_MULTIPLIER
+            TransactionType.OTHER -> 0L
         }
-    }
-
-    /**
-     * Calculates the new balance after applying a transaction.
-     * Returns the same balance if the transaction would result in a negative balance for costs.
-     */
-    fun calculateNewBalance(currentBalance: Int, type: TransactionType, customAmount: Int? = null): Int {
-        val amount = customAmount ?: getAmountForType(type)
-        val newBalance = currentBalance + amount
-        return if (newBalance < 0) currentBalance else newBalance
-    }
-
-    /**
-     * Checks if the user has enough credits for a specific cost or transaction.
-     */
-    fun canAfford(currentBalance: Int, type: TransactionType, customAmount: Int? = null): Boolean {
-        val amount = customAmount ?: getAmountForType(type)
-        if (amount >= 0) return true // It's a gain
-        return currentBalance >= Math.abs(amount)
     }
 
     /**
      * Formats the credit amount for display (e.g., 1200 -> "1.2k")
      */
-    fun formatCredits(amount: Int): String {
+    fun formatCredits(amount: Long): String {
         return if (amount >= 1000) {
             val df = DecimalFormat("#.#")
             df.format(amount / 1000.0) + "k"
@@ -82,7 +63,7 @@ object CreditCalculator {
     /**
      * Determines the user's rank based on their total credits.
      */
-    fun getRank(credits: Int): String {
+    fun getRank(credits: Long): String {
         return when {
             credits >= 10000 -> "Legendary Sage"
             credits >= 5000 -> "Master Scholar"
@@ -96,8 +77,8 @@ object CreditCalculator {
     /**
      * Calculates progress toward the next rank (0.0 to 1.0).
      */
-    fun getProgressToNextRank(credits: Int): Float {
-        val thresholds = listOf(0, 500, 1000, 2000, 5000, 10000)
+    fun getProgressToNextRank(credits: Long): Float {
+        val thresholds = listOf(0L, 500L, 1000L, 2000L, 5000L, 10000L)
         
         for (i in 0 until thresholds.size - 1) {
             if (credits < thresholds[i+1]) {

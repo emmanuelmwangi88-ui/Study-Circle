@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import com.deepseek.studycircle.data.CreditCalculator
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.Resource
 import com.deepseek.studycircle.models.trendingResources
@@ -40,7 +41,12 @@ fun DashboardScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val user by userViewModel.userData
-    val creditsValue = user?.credits ?: 0
+    val creditsValue = user?.credits ?: 0L
+    
+    val studyTimeMillis = user?.studyTimeMillis ?: 0L
+    val hours = studyTimeMillis / (1000 * 60 * 60)
+    val minutes = (studyTimeMillis % (1000 * 60 * 60)) / (1000 * 60)
+    val studyTimeString = if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
 
     Scaffold(
         topBar = {
@@ -71,7 +77,7 @@ fun DashboardScreen(
                         modifier = Modifier.padding(end = 8.dp).clickable { navController.navigate(ROUTE_CREDITS) }
                     ) {
                         Text(
-                            "📈 $creditsValue CR",
+                            "📈  ${CreditCalculator.formatCredits(creditsValue)}",
                             color = StudyAccentOrangeText,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             fontWeight = FontWeight.ExtraBold,
@@ -161,14 +167,14 @@ fun DashboardScreen(
                 ) {
                     StatCard(
                         label = "Study Hours",
-                        value = "24h",
+                        value = studyTimeString,
                         icon = Icons.Filled.Timer,
                         color = StudyBlue,
                         modifier = Modifier.weight(1f)
                     )
                     StatCard(
                         label = "Credits",
-                        value = creditsValue.toString(),
+                        value = CreditCalculator.formatCredits(creditsValue),
                         icon = Icons.Filled.Stars,
                         color = StudyTeal,
                         modifier = Modifier.weight(1f)
@@ -198,11 +204,11 @@ fun DashboardScreen(
                         onClick = { navController.navigate(ROUTE_KNOWLEDGE) }
                     )
                     Homecard(
-                        title = "Tutoring Bridge",
-                        icon = Icons.Filled.School,
+                        title = "Live Sessions",
+                        icon = Icons.Filled.VideoLibrary,
                         background = StudyTeal,
                         modifier = Modifier.weight(1f),
-                        onClick = { navController.navigate(ROUTE_TUTORING) }
+                        onClick = { navController.navigate(ROUTE_SESSION) }
                     )
                 }
             }

@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.login
+package com.deepseek.studycircle.Screens.Login
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background

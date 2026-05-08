@@ -20,30 +20,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
+import com.deepseek.studycircle.data.UserViewModel
+import com.deepseek.studycircle.models.WhiteboardAnswer
 import com.deepseek.studycircle.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WhiteboardScreen(navController: NavHostController) {
-    val context = LocalContext.current
+fun WhiteboardScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
     var questionImageUri by remember { mutableStateOf<Uri?>(null) }
     var answerText by remember { mutableStateOf("") }
     
-    val answers = remember { 
-        mutableStateListOf<Pair<String, String>>(
-            "Tutor Aris" to "The indigo highlight indicates the variable 'c' should be isolated first.",
-            "Sarah Peer" to "I tried solving it, but I'm stuck on the integration part."
-        ) 
-    }
+    val answers = userViewModel.whiteboardAnswers
+    val currentUser = userViewModel.userData.value
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -171,8 +168,8 @@ fun WhiteboardScreen(navController: NavHostController) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
-                    items(answers) { (user, text) ->
-                        AnswerItem(user, text)
+                    items(answers) { answer ->
+                        AnswerItem(answer, currentUser?.uid == answer.userId)
                     }
                 }
 
@@ -200,7 +197,7 @@ fun WhiteboardScreen(navController: NavHostController) {
                     FloatingActionButton(
                         onClick = {
                             if (answerText.isNotBlank()) {
-                                answers.add("Me" to answerText)
+                                userViewModel.postWhiteboardAnswer(answerText)
                                 answerText = ""
                             }
                         },
@@ -218,9 +215,8 @@ fun WhiteboardScreen(navController: NavHostController) {
 }
 
 @Composable
-fun AnswerItem(userName: String, text: String) {
-    val isTutor = userName.contains("Tutor") || userName.contains("Dr.")
-    val isMe = userName == "Me"
+fun AnswerItem(answer: WhiteboardAnswer, isMe: Boolean) {
+    val isTutor = answer.userName.contains("Tutor") || answer.userName.contains("Dr.")
     
     Surface(
         color = if (isTutor) StudyPrimary.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.03f),
@@ -237,7 +233,7 @@ fun AnswerItem(userName: String, text: String) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    userName.take(1).uppercase(), 
+                    answer.userName.take(1).uppercase(), 
                     color = if (isMe) Color.Black else Color.White, 
                     fontWeight = FontWeight.Bold
                 )
@@ -245,7 +241,7 @@ fun AnswerItem(userName: String, text: String) {
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(userName, fontWeight = FontWeight.Bold, color = TextWhite, fontSize = 13.sp)
+                    Text(answer.userName, fontWeight = FontWeight.Bold, color = TextWhite, fontSize = 13.sp)
                     if (isTutor) {
                         Spacer(Modifier.width(6.dp))
                         Surface(color = Gold, shape = RoundedCornerShape(4.dp)) {
@@ -254,7 +250,7 @@ fun AnswerItem(userName: String, text: String) {
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text, color = TextGray, fontSize = 14.sp, lineHeight = 20.sp)
+                Text(answer.text, color = TextGray, fontSize = 14.sp, lineHeight = 20.sp)
             }
         }
     }

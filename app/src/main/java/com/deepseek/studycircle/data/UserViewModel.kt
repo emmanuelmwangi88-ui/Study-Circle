@@ -2,7 +2,7 @@ package com.deepseek.studycircle.data
 
 import android.content.Context
 import android.net.Uri
-import android.widget.Toast
+import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -10,14 +10,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.deepseek.studycircle.models.CreditTransaction
 import com.deepseek.studycircle.models.Review
+import com.deepseek.studycircle.models.Session
+import com.deepseek.studycircle.models.UploadMaterial
 import com.deepseek.studycircle.models.User
+import com.deepseek.studycircle.models.WhiteboardAnswer
 import com.deepseek.studycircle.network.RetrofitClient
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -26,192 +27,429 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.UUID
 
 class UserViewModel : ViewModel() {
-    private val mAuth = FirebaseAuth.getInstance()
-    private val database = FirebaseDatabase.getInstance().getReference("Users")
-    private val reviewsRef = FirebaseDatabase.getInstance().getReference("Reviews")
-    private val transactionsRef = FirebaseDatabase.getInstance().getReference("Transactions")
+    private val auth by lazy { FirebaseAuth.getInstance() }
+    private val database by lazy { FirebaseDatabase.getInstance().reference }
 
     private val _userData = mutableStateOf<User?>(null)
     val userData: State<User?> = _userData
 
-    private val _resourceReviews = mutableStateListOf<Review>()
-    val resourceReviews: List<Review> = _resourceReviews
-
     private val _userTransactions = mutableStateListOf<CreditTransaction>()
     val userTransactions: List<CreditTransaction> = _userTransactions
 
+    private val _resourceReviews = mutableStateListOf<Review>()
+    val resourceReviews: List<Review> = _resourceReviews
+
+    private val _whiteboardAnswers = mutableStateListOf<WhiteboardAnswer>()
+    val whiteboardAnswers: List<WhiteboardAnswer> = _whiteboardAnswers
+
+    val allMaterials = mutableStateListOf<UploadMaterial>()
+    val allSessions = mutableStateListOf<Session>()
+
+    private var sessionStartTime: Long = System.currentTimeMillis()
+    private var lastUid: String? = null
+    private var sessionCheckId: String? = null
+    private var lastCheckedBonusSession: String? = null
+
+    private var userListener: Pair<DatabaseReference, ValueEventListener>? = null
+    private var transListener: Pair<Query, ValueEventListener>? = null
+
+    private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+        val currentUid = firebaseAuth.currentUser?.uid
+        if (currentUid != lastUid) {
+            handleUserSwitch(currentUid)
+        }
+    }
+
     init {
-        fetchUserData()
-        fetchUserTransactions()
+        auth.addAuthStateListener(authStateListener)
+        startGlobalListeners()
+        startStudyTimeTracker()
+        
+        // Initial check for existing user
+        auth.currentUser?.uid?.let { 
+            if (lastUid == null) handleUserSwitch(it)
+        }
     }
 
-    fun fetchUserData() {
-        val userId = mAuth.currentUser?.uid ?: return
-        database.child(userId).addValueEventListener(object : ValueEventListener {
+    private fun handleUserSwitch(newUid: String?) {
+        clearUserSpecificData()
+        lastUid = newUid
+        
+        if (newUid != null) {
+            sessionCheckId = UUID.randomUUID().toString()
+            lastCheckedBonusSession = null
+            startUserSpecificListeners(newUid)
+        }
+    }
+
+    private fun startUserSpecificListeners(uid: String) {
+        val userRef = database.child("users").child(uid)
+        val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val user = snapshot.getValue(User::class.java)
-                _userData.value = user
+                try {
+                    val user = snapshot.getValue(User::class.java)
+                    _userData.value = user
+                    if (user != null) {
+                        checkAndAwardBonuses(uid, user)
+                    }
+                } catch (e: Exception) {
+                    Log.e("UserViewModel", "Error parsing user data: ${e.message}")
+                }
             }
-
             override fun onCancelled(error: DatabaseError) {}
-        })
-    }
+        }
+        userRef.addValueEventListener(listener)
+        userListener = userRef to listener
 
-    fun fetchUserTransactions() {
-        val userId = mAuth.currentUser?.uid ?: return
-        transactionsRef.child(userId).addValueEventListener(object : ValueEventListener {
+        val transQuery = database.child("transactions").orderByChild("userId").equalTo(uid)
+        val tListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 _userTransactions.clear()
-                for (transSnapshot in snapshot.children) {
-                    val transaction = transSnapshot.getValue(CreditTransaction::class.java)
-                    if (transaction != null) {
-                        _userTransactions.add(transaction)
+                val list = mutableListOf<CreditTransaction>()
+                for (data in snapshot.children) {
+                    data.getValue(CreditTransaction::class.java)?.let { list.add(it) }
+                }
+                _userTransactions.addAll(list.sortedByDescending { it.timestamp })
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        transQuery.addValueEventListener(tListener)
+        transListener = transQuery to tListener
+    }
+
+    private fun startGlobalListeners() {
+        database.child("materials").addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                allMaterials.clear()
+                snapshot.children.forEach { data ->
+                    data.getValue(UploadMaterial::class.java)?.let { allMaterials.add(it) }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+
+        database.child("sessions").addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                allSessions.clear()
+                snapshot.children.forEach { data ->
+                    data.getValue(Session::class.java)?.let { allSessions.add(it) }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+
+        database.child("whiteboard_answers").addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                _whiteboardAnswers.clear()
+                val twelveHoursAgo = System.currentTimeMillis() - (12 * 60 * 60 * 1000)
+                snapshot.children.forEach { data ->
+                    data.getValue(WhiteboardAnswer::class.java)?.let { answer ->
+                        if (answer.timestamp > twelveHoursAgo) {
+                            _whiteboardAnswers.add(answer)
+                        } else {
+                            data.ref.removeValue()
+                        }
                     }
                 }
-                _userTransactions.sortByDescending { it.timestamp }
             }
-
             override fun onCancelled(error: DatabaseError) {}
         })
     }
 
-    fun performTransaction(
-        type: CreditCalculator.TransactionType,
-        customAmount: Int? = null,
-        description: String? = null,
-        onComplete: (Boolean) -> Unit = {}
-    ) {
-        val userId = mAuth.currentUser?.uid ?: return
-        val currentCredits = _userData.value?.credits ?: 0
+    private fun checkAndAwardBonuses(uid: String, user: User) {
+        if (lastCheckedBonusSession == sessionCheckId) return
+        lastCheckedBonusSession = sessionCheckId
+
+        val currentTime = System.currentTimeMillis()
+        var bonusAmount: Long = 0
+        var bonusType: CreditCalculator.TransactionType? = null
+
+        if (user.isFirstLogin) {
+            bonusAmount = CreditCalculator.WELCOME_BONUS
+            bonusType = CreditCalculator.TransactionType.SIGNUP_BONUS
+            
+            val updates = mapOf(
+                "credits" to ServerValue.increment(bonusAmount),
+                "isFirstLogin" to false,
+                "lastLogin" to currentTime
+            )
+            database.child("users").child(uid).updateChildren(updates).addOnSuccessListener {
+                recordTransaction(uid, bonusAmount, bonusType!!)
+            }
+        } else {
+            val oneDayMillis = 24 * 60 * 60 * 1000
+            if (user.lastLogin == 0L || currentTime - user.lastLogin > oneDayMillis) {
+                bonusAmount = CreditCalculator.DAILY_LOGIN_BONUS
+                bonusType = CreditCalculator.TransactionType.DAILY_LOGIN
+                
+                val updates = mapOf(
+                    "credits" to ServerValue.increment(bonusAmount),
+                    "lastLogin" to currentTime
+                )
+                database.child("users").child(uid).updateChildren(updates).addOnSuccessListener {
+                    recordTransaction(uid, bonusAmount, bonusType!!)
+                }
+            }
+        }
+    }
+
+    private fun recordTransaction(userId: String, amount: Long, type: CreditCalculator.TransactionType) {
+        val transId = database.child("transactions").push().key ?: UUID.randomUUID().toString()
+        val transaction = CreditTransaction(
+            id = transId,
+            userId = userId,
+            amount = amount,
+            type = type.name,
+            timestamp = System.currentTimeMillis(),
+            description = type.description
+        )
+        database.child("transactions").child(transId).setValue(transaction)
+    }
+
+    private fun clearUserSpecificData() {
+        userListener?.let { (ref, listener) -> ref.removeEventListener(listener) }
+        transListener?.let { (query, listener) -> query.removeEventListener(listener) }
+        userListener = null
+        transListener = null
         
-        if (!CreditCalculator.canAfford(currentCredits, type, customAmount)) {
+        _userData.value = null
+        _userTransactions.clear()
+        _resourceReviews.clear()
+        sessionCheckId = null
+        lastCheckedBonusSession = null
+    }
+
+    fun postWhiteboardAnswer(text: String) {
+        val user = _userData.value ?: return
+        val answerId = database.child("whiteboard_answers").push().key ?: UUID.randomUUID().toString()
+        val answer = WhiteboardAnswer(
+            id = answerId,
+            userName = user.name,
+            userId = user.uid,
+            text = text,
+            timestamp = System.currentTimeMillis()
+        )
+        database.child("whiteboard_answers").child(answerId).setValue(answer)
+    }
+
+    private fun startStudyTimeTracker() {
+        viewModelScope.launch {
+            while (true) {
+                delay(60000) 
+                updateStudyTime()
+            }
+        }
+    }
+
+    private fun updateStudyTime() {
+        val uid = auth.currentUser?.uid ?: return
+        val now = System.currentTimeMillis()
+        val sessionDuration = now - sessionStartTime
+        sessionStartTime = now
+
+        database.child("users").child(uid).child("studyTimeMillis").setValue(ServerValue.increment(sessionDuration))
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        try {
+            auth.removeAuthStateListener(authStateListener)
+            updateStudyTime()
+            clearUserSpecificData()
+        } catch (e: Exception) {}
+    }
+
+    fun fetchReviews(resourceId: String) {
+        database.child("reviews").child(resourceId).addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                _resourceReviews.clear()
+                snapshot.children.forEach { data ->
+                    data.getValue(Review::class.java)?.let { _resourceReviews.add(it) }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
+    fun submitReview(context: Context, resourceId: String, rating: Float, text: String, onComplete: (Boolean) -> Unit) {
+        val user = auth.currentUser ?: return
+        val reviewId = database.child("reviews").child(resourceId).push().key ?: return
+        val review = Review(
+            id = 0,
+            user = user.displayName ?: "Anonymous",
+            rating = rating.toDouble(),
+            text = text,
+            date = "Just now"
+        )
+        database.child("reviews").child(resourceId).child(reviewId).setValue(review).addOnCompleteListener {
+            onComplete(it.isSuccessful)
+        }
+    }
+
+    fun saveMaterial(title: String, category: String, description: String, url: String, onComplete: (Boolean) -> Unit) {
+        val user = auth.currentUser ?: return
+        val materialId = UUID.randomUUID().toString()
+        val material = UploadMaterial(
+            id = materialId,
+            title = title,
+            author = _userData.value?.name ?: "Anonymous",
+            authorId = user.uid,
+            category = category,
+            description = description,
+            fileUrl = url,
+            cost = CreditCalculator.UPLOAD_REWARD, // Or some default
+            timestamp = System.currentTimeMillis()
+        )
+        database.child("materials").child(materialId).setValue(material).addOnCompleteListener {
+            onComplete(it.isSuccessful)
+        }
+    }
+
+    fun uploadMaterial(title: String, category: String, cost: Long, fileUri: Uri, context: Context, onComplete: (Boolean) -> Unit) {
+        val user = auth.currentUser ?: return
+
+        uploadFileToCloudinary(context, fileUri) { url ->
+            if (url != null) {
+                val materialId = UUID.randomUUID().toString()
+                val material = UploadMaterial(
+                    id = materialId,
+                    title = title,
+                    author = _userData.value?.name ?: "Anonymous",
+                    authorId = user.uid,
+                    category = category,
+                    cost = cost,
+                    fileUrl = url,
+                    timestamp = System.currentTimeMillis()
+                )
+                database.child("materials").child(materialId).setValue(material).addOnCompleteListener {
+                    if (it.isSuccessful) {
+                        performTransaction(
+                            type = CreditCalculator.TransactionType.UPLOAD,
+                            description = "Uploaded material: $title"
+                        ) { }
+                        onComplete(true)
+                    } else {
+                        onComplete(false)
+                    }
+                }
+            } else {
+                onComplete(false)
+            }
+        }
+    }
+
+    fun performTransaction(type: CreditCalculator.TransactionType, customAmount: Long? = null, description: String, onComplete: (Boolean) -> Unit) {
+        val uid = auth.currentUser?.uid ?: return
+        val user = _userData.value ?: return
+        
+        val amount = customAmount ?: CreditCalculator.getAmountForType(type)
+        
+        if (user.credits + amount < 0) {
             onComplete(false)
             return
         }
 
-        val amount = customAmount ?: CreditCalculator.getAmountForType(type)
-        val newBalance = CreditCalculator.calculateNewBalance(currentCredits, type, customAmount)
-
-        // Update credits
-        database.child(userId).child("credits").setValue(newBalance)
-            .addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    // Record transaction
-                    val transId = transactionsRef.child(userId).push().key ?: System.currentTimeMillis().toString()
-                    val transaction = CreditTransaction(
-                        id = transId,
-                        amount = amount,
-                        type = type.name,
-                        timestamp = System.currentTimeMillis(),
-                        description = description ?: type.description
-                    )
-                    transactionsRef.child(userId).child(transId).setValue(transaction)
-                    onComplete(true)
-                } else {
-                    onComplete(false)
-                }
-            }
-    }
-
-    // Legacy method for backward compatibility
-    fun addCredits(amount: Int, onComplete: (Boolean) -> Unit = {}) {
-        performTransaction(CreditCalculator.TransactionType.OTHER, amount, "Credit Adjustment", onComplete)
-    }
-
-    fun toggleBookmark(resourceId: Int, isBookmarked: Boolean, onComplete: (Boolean) -> Unit = {}) {
-        val userId = mAuth.currentUser?.uid ?: return
-        database.child(userId).child("bookmarks").child(resourceId.toString()).setValue(isBookmarked)
-            .addOnCompleteListener { task ->
-                onComplete(task.isSuccessful)
-            }
-    }
-
-    fun fetchReviews(resourceId: Int) {
-        reviewsRef.child(resourceId.toString()).addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                _resourceReviews.clear()
-                for (reviewSnapshot in snapshot.children) {
-                    val review = reviewSnapshot.getValue(Review::class.java)
-                    if (review != null) {
-                        _resourceReviews.add(review)
-                    }
-                }
-                _resourceReviews.reverse() // Newest first
-            }
-
-            override fun onCancelled(error: DatabaseError) {}
-        })
-    }
-
-    fun submitReview(context: Context, resourceId: Int, rating: Float, reviewText: String, onComplete: (Boolean) -> Unit) {
-        val reviewId = System.currentTimeMillis().toString()
-        val userName = _userData.value?.name ?: "Anonymous"
-        val currentDate = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date())
-        
-        val reviewData = Review(
-            id = reviewId.hashCode(),
-            user = userName,
-            rating = rating.toDouble(),
-            text = reviewText,
-            date = currentDate
+        val transactionId = database.child("transactions").push().key ?: UUID.randomUUID().toString()
+        val transaction = CreditTransaction(
+            id = transactionId,
+            userId = uid,
+            amount = amount,
+            type = type.name,
+            description = description,
+            timestamp = System.currentTimeMillis()
         )
 
-        reviewsRef.child(resourceId.toString()).child(reviewId).setValue(reviewData)
-            .addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    Toast.makeText(context, "Review submitted!", Toast.LENGTH_SHORT).show()
+        database.child("users").child(uid).child("credits").setValue(ServerValue.increment(amount)).addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                database.child("transactions").child(transactionId).setValue(transaction).addOnCompleteListener {
+                    onComplete(it.isSuccessful)
                 }
-                onComplete(task.isSuccessful)
-            }
-    }
-
-    fun uploadFileToCloudinary(context: Context, fileUri: Uri, onComplete: (String?) -> Unit) {
-        val file = uriToFile(context, fileUri) ?: return
-        val requestFile = file.asRequestBody("*/*".toMediaTypeOrNull())
-        val body = MultipartBody.Part.createFormData("file", file.name, requestFile)
-        val uploadPreset = "studycircle_preset".toRequestBody("text/plain".toMediaTypeOrNull())
-
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val response = RetrofitClient.cloudinaryApi.uploadImage(body, uploadPreset)
-                withContext(Dispatchers.Main) {
-                    if (response.isSuccessful && response.body() != null) {
-                        onComplete(response.body()?.secure_url)
-                    } else {
-                        onComplete(null)
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) { onComplete(null) }
+            } else {
+                onComplete(false)
             }
         }
     }
 
-    private fun uriToFile(context: Context, uri: Uri): File? {
-        val contentResolver = context.contentResolver
-        val tempFile = File(context.cacheDir, "temp_file_" + System.currentTimeMillis())
-        try {
-            contentResolver.openInputStream(uri)?.use { inputStream ->
-                FileOutputStream(tempFile).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
+    fun toggleBookmark(resourceId: String, isBookmarked: Boolean) {
+        val uid = auth.currentUser?.uid ?: return
+        database.child("users").child(uid).child("bookmarks").child(resourceId).setValue(isBookmarked)
+    }
+
+    fun createSession(title: String, topic: String, onComplete: (Session?) -> Unit) {
+        val user = auth.currentUser ?: return
+        val sessionId = UUID.randomUUID().toString()
+        val session = Session(
+            id = sessionId,
+            title = title,
+            topic = topic,
+            student = _userData.value?.name ?: "Anonymous",
+            creatorId = user.uid,
+            dateTime = "Just now",
+            isLive = true
+        )
+        database.child("sessions").child(sessionId).setValue(session).addOnCompleteListener {
+            if (it.isSuccessful) onComplete(session) else onComplete(null)
+        }
+    }
+
+    fun deleteSession(sessionId: String, onComplete: (Boolean) -> Unit) {
+        database.child("sessions").child(sessionId).removeValue().addOnCompleteListener {
+            onComplete(it.isSuccessful)
+        }
+    }
+
+    fun uploadFileToCloudinary(context: Context, fileUri: Uri, onComplete: (String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val file = getFileFromUri(context, fileUri)
+            if (file == null || !file.exists()) {
+                withContext(Dispatchers.Main) { onComplete(null) }
+                return@launch
             }
-            return tempFile
-        } catch (e: Exception) {
-            return null
+
+            val mimeType = context.contentResolver.getType(fileUri) ?: "application/octet-stream"
+            val requestFile = file.asRequestBody(mimeType.toMediaTypeOrNull())
+            val body = MultipartBody.Part.createFormData("file", file.name, requestFile)
+            val uploadPreset = "profile".toRequestBody("text/plain".toMediaTypeOrNull())
+
+            try {
+                val response = RetrofitClient.cloudinaryApi.uploadFile("dnt3lcyoj", body, uploadPreset)
+                withContext(Dispatchers.Main) {
+                    if (response.isSuccessful) onComplete(response.body()?.secureUrl) else onComplete(null)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onComplete(null) }
+            } finally {
+                if (file.exists()) file.delete()
+            }
         }
     }
 
     fun updateUserProfile(context: Context, name: String, bio: String, imageUri: String, onComplete: (Boolean) -> Unit) {
-        val userId = mAuth.currentUser?.uid ?: return
-        val updates = mapOf("name" to name, "bio" to bio, "imageUri" to imageUri)
-        database.child(userId).updateChildren(updates).addOnCompleteListener { task ->
-            onComplete(task.isSuccessful)
+        val uid = auth.currentUser?.uid ?: return
+        val updates = mapOf(
+            "name" to name,
+            "bio" to bio,
+            "imageUri" to imageUri
+        )
+        database.child("users").child(uid).updateChildren(updates).addOnCompleteListener {
+            onComplete(it.isSuccessful)
+        }
+    }
+
+    private fun getFileFromUri(context: Context, uri: Uri): File? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val file = File(context.cacheDir, "temp_file_${System.currentTimeMillis()}")
+            val outputStream = FileOutputStream(file)
+            inputStream?.copyTo(outputStream)
+            inputStream?.close()
+            outputStream.close()
+            file
+        } catch (e: Exception) {
+            null
         }
     }
 }

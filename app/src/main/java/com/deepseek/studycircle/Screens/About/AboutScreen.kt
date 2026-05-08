@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.Screens.Settings
+package com.deepseek.studycircle.Screens.About
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -10,7 +10,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -26,7 +25,7 @@ fun AboutScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("About Studycircle", fontWeight = FontWeight.Bold) },
+                title = { Text("About Study Circle", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigate(ROUTE_SETTINGS) }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -42,14 +41,14 @@ fun AboutScreen(navController: NavHostController) {
                 .padding(16.dp)
         ) {
             Text(
-                text = "Studycircle v1.0.0",
+                text = "Study Circle app ",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = StudyTextPrimary
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Studycircle is a collaborative learning platform designed to connect students and mentors. Our mission is to facilitate academic exchanges and help everyone achieve their learning goals through peer-to-peer support.",
+                text = "Study Circle is a collaborative learning platform designed to connect students and mentors. Our mission is to facilitate academic exchanges and help everyone achieve their learning goals through peer-to-peer support.",
                 fontSize = 16.sp,
                 lineHeight = 24.sp
             )
@@ -60,7 +59,7 @@ fun AboutScreen(navController: NavHostController) {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "• Peer Tutoring & Mentorship\n• Collaborative Whiteboards\n• Resource Sharing\n• Activity Tracking\n• Reputation System",
+                text = "• Peer Tutoring & Mentorship\n• Collaborative Whiteboards\n• Resource Sharing\n• Activity Tracking\n• Asking and Answering Questions",
                 fontSize = 16.sp,
                 modifier = Modifier.padding(start = 8.dp, top = 8.dp)
             )

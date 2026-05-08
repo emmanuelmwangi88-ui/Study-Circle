@@ -1,5 +1,8 @@
 package com.deepseek.studycircle.screens.settings
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +26,7 @@ import androidx.navigation.compose.rememberNavController
 import com.deepseek.studycircle.data.AuthViewModel
 import com.deepseek.studycircle.navigation.*
 import com.deepseek.studycircle.ui.theme.StudyTextPrimary
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,8 +66,8 @@ fun SettingsScreen(navController: NavHostController) {
                 "Account" to ROUTE_PROFILE,
                 "Credits" to ROUTE_CREDITS,
                 "Notifications" to ROUTE_ACTIVITY,
-                "About Studycircle" to ROUTE_ABOUT,
-                "Help & Support" to null,
+                "About Study Circle" to ROUTE_ABOUT,
+                "Help & Support" to "https://www.instagram.com/itadori_manu/",
                 "Sign Out" to ROUTE_LOGIN
             )
 
@@ -72,7 +76,14 @@ fun SettingsScreen(navController: NavHostController) {
                     onClick = {
                         if (label == "Sign Out") {
                             authViewModel.logout()
-                        } else if (route != null) {
+                        } else if (label == "Help & Support") {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(route))
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
                             navController.navigate(route)
                         }
                     },

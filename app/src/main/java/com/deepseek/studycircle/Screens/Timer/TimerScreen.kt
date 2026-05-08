@@ -77,7 +77,7 @@ fun ColumnScope.SetupTimer(totalMinutes: Int, selectedSubject: String, viewModel
     LazyRow(
         modifier = Modifier
             .fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         items(listOf(15, 25, 45, 60, 90, 120)) { mins ->
             DurationChip(mins, totalMinutes == mins) { viewModel.setDuration(mins) }

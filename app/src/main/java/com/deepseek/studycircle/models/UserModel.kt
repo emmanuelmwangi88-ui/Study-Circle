@@ -1,8 +1,10 @@
 package com.deepseek.studycircle.models
 
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.annotation.Keep
+import com.google.firebase.database.IgnoreExtraProperties
 
-// ----- Data Models -----
+@Keep
+@IgnoreExtraProperties
 data class User(
     val name: String = "",
     val email: String = "",
@@ -10,28 +12,16 @@ data class User(
     val role: String = "user",
     val bio: String = "",
     val imageUri: String = "",
-    val credits: Int = 0,
+    val credits: Long = 0,
     val reputation: Double = 0.0,
     val isFirstLogin: Boolean = true,
+    val lastLogin: Long = 0,
+    val studyTimeMillis: Long = 0,
     val bookmarks: Map<String, Boolean> = emptyMap()
 )
 
-data class Resource(
-    val id: Int,
-    val title: String,
-    val author: String,
-    val authorBadge: String,
-    val type: String,
-    val pages: Int,
-    val size: String,
-    val downloads: Int,
-    val rating: Double,
-    val cost: Int,
-    val category: String = "",
-    val isBookmarked: Boolean = false,
-    val fileUrl: String = ""
-)
-
+@Keep
+@IgnoreExtraProperties
 data class Review(
     val id: Int = 0,
     val user: String = "",
@@ -40,55 +30,37 @@ data class Review(
     val date: String = ""
 )
 
-
-data class Tutor(
-    val name: String = "",
-    val expertise: String = "",
-    val rating: Double = 0.0,
-    val sessions: Int = 0,
-    val creditsPer15Min: Int = 0,
-    val imageUrl: String = ""
-)
-
-data class Session(
-    val id: Int = 0,
-    val title: String = "",
-    val student: String = "",
-    val dateTime: String = "",
-    val topic: String = "",
-    val isConfirmed: Boolean = false,
-    val isLive: Boolean = false,
-    val zoomLink: String = "",
-    val thumbnailUrl: String = ""
-)
-
-data class Notification(
-    val id: Int,
-    val title: String,
-    val time: String,
-    val description: String,
-    val icon: ImageVector
-)
-
-data class BadgeItem(
-    val name: String,
-    val level: Int,
-    val icon: ImageVector
-)
-
-data class StudyGroup(
-    val id: Int = 0,
-    val name: String = "",
-    val description: String = "",
-    val members: Int = 0,
-    val dailyPosts: Int = 0
-)
-
+@Keep
+@IgnoreExtraProperties
 data class CreditTransaction(
     val id: String = "",
     val userId: String = "",
-    val amount: Int = 0,
+    val amount: Long = 0,
     val type: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val description: String = ""
+)
+
+@Keep
+@IgnoreExtraProperties
+data class UploadMaterial(
+    val id: String = "",
+    val title: String = "",
+    val category: String = "",
+    val description: String = "",
+    val fileUrl: String = "",
+    val author: String = "",
+    val authorId: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val cost: Long = 0
+)
+
+@Keep
+@IgnoreExtraProperties
+data class WhiteboardAnswer(
+    val id: String = "",
+    val userName: String = "",
+    val userId: String = "",
+    val text: String = "",
+    val timestamp: Long = System.currentTimeMillis()
 )
