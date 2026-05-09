@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.knowledgebank
+package com.deepseek.studycircle.Screens.Knowledgebank
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -26,49 +26,67 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import coil.compose.AsyncImage
 import com.deepseek.studycircle.R
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.Resource
-import com.deepseek.studycircle.models.trendingResources
+import com.deepseek.studycircle.models.UploadMaterial
+import com.deepseek.studycircle.models.User
 import com.deepseek.studycircle.ui.theme.*
+
+@Composable
+fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
+    val uploadedMaterials = userViewModel.allMaterials
+    val user by userViewModel.userData
+
+    KnowledgeBankContent(
+        uploadedMaterials = uploadedMaterials,
+        user = user,
+        onBackClick = { navController.popBackStack() },
+        onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") }
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
+fun KnowledgeBankContent(
+    uploadedMaterials: List<UploadMaterial>,
+    user: User?,
+    onBackClick: () -> Unit,
+    onResourceClick: (String) -> Unit
+) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All Topics") }
     
-    val categories = listOf("All Topics", "Chemistry", "Mathematics", "Physics", "Biology", "Languages")
-    
-    val uploadedMaterials = userViewModel.allMaterials
-    val mappedUploadedResources = uploadedMaterials.map { mat ->
-        Resource(
-            id = mat.id,
-            title = mat.title,
-            author = mat.author,
-            authorBadge = "Student",
-            tag = "NEW",
-            type = "PDF", // Default type
-            pages = 1,
-            size = "N/A",
-            downloads = 0,
-            rating = 5.0,
-            reviews = 0,
-            category = mat.category,
-            cost = mat.cost,
-            isBookmarked = false,
-            fileUrl = mat.fileUrl
-        )
-    }
+    val userBookmarks = user?.bookmarks ?: emptyMap()
 
-    // Combine static trending resources with live uploaded resources
-    val allAvailableResources = remember(mappedUploadedResources) {
-        (mappedUploadedResources + trendingResources).distinctBy { it.id }
+    val categories = listOf("All Topics", "Chemistry", "Mathematics", "Physics", "Biology", "Languages")
+
+    val mappedResources = remember(uploadedMaterials, userBookmarks) {
+        uploadedMaterials.map { mat ->
+            Resource(
+                id = mat.id,
+                title = mat.title,
+                author = mat.author,
+                authorBadge = "Student",
+                tag = "NEW",
+                type = mat.fileType,
+                pages = 1,
+                size = "N/A",
+                downloads = 0,
+                rating = 5.0,
+                reviews = 0,
+                category = mat.category,
+                cost = mat.cost,
+                isBookmarked = userBookmarks[mat.id] == true,
+                fileUrl = mat.fileUrl,
+                authorImage = mat.authorImage
+            )
+        }
     }
     
-    // Filter resources based on search and category
-    val filteredResources = remember(searchQuery, selectedCategory, allAvailableResources) {
-        allAvailableResources.filter { res ->
+    val filteredResources = remember(searchQuery, selectedCategory, mappedResources) {
+        mappedResources.filter { res ->
             val matchesSearch = res.title.contains(searchQuery, ignoreCase = true) || 
                               res.author.contains(searchQuery, ignoreCase = true)
             val matchesCategory = selectedCategory == "All Topics" || res.category == selectedCategory
@@ -81,7 +99,7 @@ fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserVie
             TopAppBar(
                 title = { Text("Knowledge Bank", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
@@ -96,7 +114,6 @@ fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserVie
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
-            // --- Header Section ---
             Column(
                 modifier = Modifier
                     .padding(16.dp)
@@ -111,7 +128,6 @@ fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserVie
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Search Bar
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -155,7 +171,6 @@ fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserVie
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- Categories Section ---
             SectionHeader(title = "Categories")
             
             LazyRow(
@@ -174,7 +189,6 @@ fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserVie
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // --- Results Section ---
             if (filteredResources.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                     Text("No resources found", color = StudyTextSecondary)
@@ -215,24 +229,23 @@ fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserVie
                         ResourceCard(
                             res = res,
                             modifier = Modifier.width(260.dp),
-                            onClick = { navController.navigate("resource/${res.id}") }
+                            onClick = { onResourceClick(res.id.toString()) }
                         )
                     }
                 }
             }
 
-            // --- Recently Added ---
             SectionHeader(title = "Recently Added")
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp)
             ) {
-                items(allAvailableResources.sortedByDescending { it.id }.take(10)) { res ->
+                items(mappedResources.sortedByDescending { it.id }.take(10)) { res ->
                     ResourceCard(
                         res = res,
                         modifier = Modifier.width(260.dp),
-                        onClick = { navController.navigate("resource/${res.id}") }
+                        onClick = { onResourceClick(res.id.toString()) }
                     )
                 }
             }
@@ -281,9 +294,16 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(130.dp)
-                    .background(Color(0xFFE0E0E0))
+                    .background(Color(0xFFE0E0E0)),
+                contentAlignment = Alignment.Center
             ) {
-                // Credits Badge
+                Icon(
+                    imageVector = if (res.type.uppercase() == "PDF") Icons.Default.PictureAsPdf else Icons.Default.Description,
+                    contentDescription = null,
+                    tint = if (res.type.uppercase() == "PDF") Color(0xFFE74C3C) else StudyPrimary,
+                    modifier = Modifier.size(64.dp)
+                )
+
                 Surface(
                     color = StudyAccentOrange.copy(alpha = 0.9f),
                     shape = RoundedCornerShape(8.dp),
@@ -301,12 +321,21 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
 
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(id = R.drawable.person),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp).clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
+                    if (res.authorImage.isNotEmpty()) {
+                        AsyncImage(
+                            model = res.authorImage,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(id = R.drawable.person),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = res.author, 
@@ -372,6 +401,16 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
 
 @Preview(showBackground =  true)
 @Composable
-fun KnowledgeBankScreenPreview() {
-    KnowledgeBankScreen(rememberNavController())
+fun KnowledgeBankContentPreview() {
+    StudycircleTheme {
+        KnowledgeBankContent(
+            uploadedMaterials = listOf(
+                UploadMaterial(id = "1", title = "Organic Chemistry Notes", author = "Alice", category = "Chemistry", cost = 100),
+                UploadMaterial(id = "2", title = "Calculus II Problems", author = "Bob", category = "Mathematics", cost = 150)
+            ),
+            user = User(name = "John Doe"),
+            onBackClick = {},
+            onResourceClick = {}
+        )
+    }
 }

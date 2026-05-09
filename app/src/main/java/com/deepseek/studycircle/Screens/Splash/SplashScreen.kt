@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.splash
+package com.deepseek.studycircle.Screens.Splash
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background

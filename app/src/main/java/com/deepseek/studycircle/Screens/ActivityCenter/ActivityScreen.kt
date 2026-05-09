@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.activitycenter
+package com.deepseek.studycircle.Screens.ActivityCenter
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,18 +26,39 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.deepseek.studycircle.data.CreditCalculator
 import com.deepseek.studycircle.data.UserViewModel
+import com.deepseek.studycircle.models.CreditTransaction
 import com.deepseek.studycircle.models.Resource
-import com.deepseek.studycircle.models.trendingResources
+import com.deepseek.studycircle.models.UploadMaterial
+import com.deepseek.studycircle.models.User
 import com.deepseek.studycircle.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActivityCenterScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
     val user by userViewModel.userData
     val transactions = userViewModel.userTransactions
+    val materials = userViewModel.allMaterials
+
+    ActivityCenterContent(
+        user = user,
+        transactions = transactions,
+        materials = materials,
+        onBackClick = { navController.popBackStack() },
+        onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ActivityCenterContent(
+    user: User?,
+    transactions: List<CreditTransaction>,
+    materials: List<UploadMaterial>,
+    onBackClick: () -> Unit,
+    onResourceClick: (String) -> Unit
+) {
     val creditsValue = user?.credits ?: 0L
     val rank = CreditCalculator.getRank(creditsValue)
 
@@ -46,7 +67,7 @@ fun ActivityCenterScreen(navController: NavHostController, userViewModel: UserVi
             TopAppBar(
                 title = { Text("Activity Center", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
@@ -140,7 +161,7 @@ fun ActivityCenterScreen(navController: NavHostController, userViewModel: UserVi
             }
 
             Spacer(modifier = Modifier.height(20.dp))
-            BookmarkedResourcesSection(navController, user?.bookmarks ?: emptyMap())
+            BookmarkedResourcesSection(user, materials, onResourceClick)
             Spacer(modifier = Modifier.height(20.dp))
             UpcomingSessionsSection()
             Spacer(modifier = Modifier.height(20.dp))
@@ -232,10 +253,33 @@ fun TransactionItem(title: String, amount: String, time: String, isExpense: Bool
 
 @Composable
 fun BookmarkedResourcesSection(
-    navController: NavHostController,
-    bookmarks: Map<String, Boolean>
+    user: User?,
+    materials: List<UploadMaterial>,
+    onResourceClick: (String) -> Unit
 ) {
-    val bookmarkedResources = trendingResources.filter { bookmarks[it.id] == true }
+    val bookmarks = user?.bookmarks ?: emptyMap()
+    
+    val bookmarkedResources = remember(bookmarks, materials) {
+        materials.filter { bookmarks[it.id] == true }.map { mat ->
+            Resource(
+                id = mat.id,
+                title = mat.title,
+                author = mat.author,
+                authorBadge = "Student",
+                tag = "NEW",
+                type = mat.fileType,
+                pages = 1,
+                size = "N/A",
+                downloads = 0,
+                rating = 5.0,
+                reviews = 0,
+                category = mat.category,
+                cost = mat.cost,
+                isBookmarked = true,
+                fileUrl = mat.fileUrl
+            )
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -278,7 +322,7 @@ fun BookmarkedResourcesSection(
             } else {
                 bookmarkedResources.forEach { resource ->
                     BookmarkItem(resource) {
-                        navController.navigate("resource/${resource.id}")
+                        onResourceClick(resource.id.toString())
                     }
                     Spacer(Modifier.height(12.dp))
                 }
@@ -420,6 +464,17 @@ fun SessionSmallItem(time: String, title: String, student: String) {
 
 @Preview(showBackground = true)
 @Composable
-fun ActivityCenterScreenPreview() {
-    ActivityCenterScreen(rememberNavController())
+fun ActivityCenterContentPreview() {
+    StudycircleTheme {
+        ActivityCenterContent(
+            user = User(name = "Jane Smith", credits = 2500, reputation = 4.5),
+            transactions = listOf(
+                CreditTransaction(description = "Upload Reward", amount = 50, timestamp = System.currentTimeMillis()),
+                CreditTransaction(description = "Download Cost", amount = -10, timestamp = System.currentTimeMillis() - 3600000)
+            ),
+            materials = emptyList(),
+            onBackClick = {},
+            onResourceClick = {}
+        )
+    }
 }

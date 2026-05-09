@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.register
+package com.deepseek.studycircle.Screens.Register
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement

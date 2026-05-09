@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.resourcedetails
+package com.deepseek.studycircle.Screens.ResourceDetails
 
 import android.content.Intent
 import android.net.Uri
@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -31,29 +32,57 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import coil.compose.AsyncImage
 import com.deepseek.studycircle.data.CreditCalculator
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.Resource
 import com.deepseek.studycircle.models.Review
-import com.deepseek.studycircle.models.trendingResources
-import com.deepseek.studycircle.navigation.ROUTE_PROFILE
+import com.deepseek.studycircle.models.User
 import com.deepseek.studycircle.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ResourceDetailScreen(
     navController: NavHostController, 
     resource: Resource,
     userViewModel: UserViewModel = viewModel()
 ) {
+    val user by userViewModel.userData
+    val reviews = userViewModel.resourceReviews
+    
+    ResourceDetailContent(
+        resource = resource,
+        user = user,
+        reviews = reviews,
+        onBackClick = { navController.popBackStack() },
+        onToggleBookmark = { id, bookmarked -> userViewModel.toggleBookmark(id, bookmarked) {} },
+        onPerformTransaction = { type, amount, desc, onComplete -> 
+            userViewModel.performTransaction(type, amount, desc, onComplete) 
+        },
+        onSubmitReview = { rating, text, onComplete ->
+            userViewModel.submitReview(resource.id, rating, text, onComplete)
+        },
+        onFetchReviews = { userViewModel.fetchReviews(resource.id) }
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+fun ResourceDetailContent(
+    resource: Resource,
+    user: User?,
+    reviews: List<Review>,
+    onBackClick: () -> Unit,
+    onToggleBookmark: (String, Boolean) -> Unit,
+    onPerformTransaction: (CreditCalculator.TransactionType, Long?, String, (Boolean) -> Unit) -> Unit,
+    onSubmitReview: (Float, String, (Boolean) -> Unit) -> Unit,
+    onFetchReviews: () -> Unit
+) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     
-    val user by userViewModel.userData
-    val reviews = userViewModel.resourceReviews
     val isBookmarked = user?.bookmarks?.get(resource.id.toString()) == true
     
     var showReviewDialog by remember { mutableStateOf(false) }
@@ -64,7 +93,7 @@ fun ResourceDetailScreen(
     var isUnlocked by remember { mutableStateOf(false) }
 
     LaunchedEffect(resource.id) {
-        userViewModel.fetchReviews(resource.id)
+        onFetchReviews()
     }
 
     fun shareResource() {
@@ -129,7 +158,7 @@ fun ResourceDetailScreen(
                 Button(
                     onClick = {
                         isSubmittingReview = true
-                        userViewModel.submitReview(context, resource.id, userRating, reviewText) { success ->
+                        onSubmitReview(userRating, reviewText) { success ->
                             if (success) {
                                 showReviewDialog = false
                                 reviewText = ""
@@ -167,10 +196,10 @@ fun ResourceDetailScreen(
                         Button(
                             onClick = { 
                                 if (!isUnlocked) {
-                                    userViewModel.performTransaction(
-                                        type = CreditCalculator.TransactionType.DOWNLOAD,
-                                        customAmount = -resource.cost,
-                                        description = "Unlocked: ${resource.title}"
+                                    onPerformTransaction(
+                                        CreditCalculator.TransactionType.DOWNLOAD,
+                                        -resource.cost,
+                                        "Unlocked: ${resource.title}"
                                     ) { success ->
                                         if (success) {
                                             isUnlocked = true
@@ -194,7 +223,7 @@ fun ResourceDetailScreen(
                                 CircularProgressIndicator(Modifier.size(24.dp), color = Color.White)
                             } else {
                                 Icon(
-                                    imageVector = if (isUnlocked) Icons.Default.Download else Icons.Default.LockOpen, 
+                                    imageVector = if (isUnlocked) Icons.Default.LockOpen else Icons.Default.LockOpen,
                                     contentDescription = null
                                 )
                                 Spacer(Modifier.width(8.dp))
@@ -213,7 +242,7 @@ fun ResourceDetailScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding).background(StudyBackground).verticalScroll(rememberScrollState())) {
             Box(modifier = Modifier.fillMaxWidth().height(260.dp).background(Color(0xFFE5E7EB))) {
                 IconButton(
-                    onClick = { navController.popBackStack() }, 
+                    onClick = onBackClick, 
                     modifier = Modifier.padding(16.dp).align(Alignment.TopStart).background(Color.Black.copy(alpha = 0.3f), CircleShape)
                 ) {
                     Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
@@ -227,7 +256,7 @@ fun ResourceDetailScreen(
                     }
                     Spacer(Modifier.width(8.dp))
                     IconButton(
-                        onClick = { userViewModel.toggleBookmark(resource.id, !isBookmarked) }, 
+                        onClick = { onToggleBookmark(resource.id.toString(), !isBookmarked) },
                         modifier = Modifier.background(Color.Black.copy(alpha = 0.3f), CircleShape)
                     ) {
                         Icon(
@@ -264,9 +293,7 @@ fun ResourceDetailScreen(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(StudySurface).padding(12.dp), 
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(modifier = Modifier.size(52.dp).clip(CircleShape).background(Color.LightGray), contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Default.Person, contentDescription = null, modifier = Modifier.size(32.dp), tint = Color.White)
-                    }
+                    ProfileImage(imageUrl = resource.authorImage, size = 52)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(text = resource.author, fontWeight = FontWeight.Bold, color = StudyTextPrimary)
@@ -327,9 +354,7 @@ fun DetailStatItem(icon: ImageVector, value: String, label: String, iconColor: C
 fun ReviewCard(review: Review) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = StudySurface)) {
         Row(Modifier.padding(16.dp)) {
-            Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(StudyPrimary.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) { 
-                Text(review.user.take(1).uppercase(), color = StudyPrimary, fontWeight = FontWeight.Bold) 
-            }
+            ProfileImage(imageUrl = review.userImage, size = 40)
             Spacer(Modifier.width(12.dp))
             Column {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -349,5 +374,68 @@ fun ReviewCard(review: Review) {
                 Text(text = review.text, fontSize = 14.sp, color = StudyTextSecondary)
             }
         }
+    }
+}
+
+@Composable
+fun ProfileImage(imageUrl: String, size: Int = 32) {
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(StudyPrimary.copy(alpha = 0.1f)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (imageUrl.isNotEmpty()) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = "Profile Image",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = null,
+                modifier = Modifier.size((size * 0.6).dp),
+                tint = StudyPrimary
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun ResourceDetailContentPreview() {
+    StudycircleTheme {
+        ResourceDetailContent(
+            resource = Resource(
+                id = "1",
+                title = "Machine Learning Basics",
+                author = "Dr. Alice",
+                authorBadge = "Expert",
+                tag = "Best Seller",
+                type = "PDF",
+                pages = 45,
+                size = "2.4 MB",
+                downloads = 1240,
+                rating = 4.8,
+                reviews = 15,
+                category = "Computer Science",
+                cost = 200,
+                isBookmarked = false,
+                fileUrl = ""
+            ),
+            user = User(name = "John Doe"),
+            reviews = listOf(
+                Review(user = "Bob", rating = 5.0, text = "Excellent material, very clear!", date = "Oct 20"),
+                Review(user = "Charlie", rating = 4.0, text = "Good, but some diagrams are small.", date = "Oct 18")
+            ),
+            onBackClick = {},
+            onToggleBookmark = { _, _ -> },
+            onPerformTransaction = { _, _, _, _ -> },
+            onSubmitReview = { _, _, _ -> },
+            onFetchReviews = {}
+        )
     }
 }

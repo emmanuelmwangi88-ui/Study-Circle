@@ -1,6 +1,7 @@
-package com.deepseek.studycircle.screens.whiteboard
+package com.deepseek.studycircle.Screens.Whitebooard
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -32,20 +34,87 @@ import coil.compose.AsyncImage
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.WhiteboardAnswer
 import com.deepseek.studycircle.ui.theme.*
+import kotlinx.coroutines.delay
+
+@Composable
+fun WhiteboardScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
+    val answers = userViewModel.whiteboardAnswers
+    val currentUser = userViewModel.userData.value
+    val questionUrl = userViewModel.whiteboardQuestionUrl.value
+    val expiresAt = userViewModel.whiteboardExpiresAt.value
+
+    WhiteboardContent(
+        answers = answers,
+        currentUserUid = currentUser?.uid,
+        questionUrl = questionUrl,
+        expiresAt = expiresAt,
+        onBackClick = { navController.popBackStack() },
+        onUploadQuestion = { context, uri, onResult ->
+            userViewModel.uploadFileToCloudinary(context, uri) { url, _, error ->
+                if (url != null) {
+                    userViewModel.setWhiteboardQuestion(url)
+                }
+                onResult(url, error)
+            }
+        },
+        onPostAnswer = { text ->
+            userViewModel.postWhiteboardAnswer(text)
+        }
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WhiteboardScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
-    var questionImageUri by remember { mutableStateOf<Uri?>(null) }
+fun WhiteboardContent(
+    answers: List<WhiteboardAnswer>,
+    currentUserUid: String?,
+    questionUrl: String?,
+    expiresAt: Long?,
+    onBackClick: () -> Unit,
+    onUploadQuestion: (android.content.Context, Uri, (String?, String?) -> Unit) -> Unit,
+    onPostAnswer: (String) -> Unit
+) {
+    val context = LocalContext.current
     var answerText by remember { mutableStateOf("") }
+    var isUploading by remember { mutableStateOf(false) }
+
+    // Persistent Countdown Timer Logic
+    var timerString by remember { mutableStateOf("60:00") }
     
-    val answers = userViewModel.whiteboardAnswers
-    val currentUser = userViewModel.userData.value
+    LaunchedEffect(expiresAt, questionUrl) {
+        if (questionUrl != null && expiresAt != null) {
+            while (true) {
+                val currentTime = System.currentTimeMillis()
+                val remainingMillis = expiresAt - currentTime
+                
+                if (remainingMillis > 0) {
+                    val remainingSeconds = remainingMillis / 1000
+                    val minutes = remainingSeconds / 60
+                    val seconds = remainingSeconds % 60
+                    timerString = "%02d:%02d".format(minutes, seconds)
+                } else {
+                    timerString = "00:00"
+                    break
+                }
+                delay(1000L)
+            }
+        } else {
+            timerString = "60:00"
+        }
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        questionImageUri = uri
+        uri?.let {
+            isUploading = true
+            onUploadQuestion(context, it) { url, error ->
+                isUploading = false
+                if (url == null) {
+                    Toast.makeText(context, error ?: "Upload failed", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -63,24 +132,38 @@ fun WhiteboardScreen(navController: NavHostController, userViewModel: UserViewMo
                 },
                 navigationIcon = {
                     IconButton(
-                        onClick = { navController.popBackStack() },
+                        onClick = onBackClick,
                         modifier = Modifier.background(Color.White.copy(alpha = 0.05f), CircleShape)
                     ) {
                         Icon(Icons.Default.Close, "Leave", tint = TextWhite)
                     }
                 },
                 actions = {
-                    Surface(
-                        color = Gold.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.padding(end = 16.dp)
-                    ) {
-                        Text(
-                            "42:15", 
-                            color = Gold, 
-                            fontWeight = FontWeight.Bold, 
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
+                    if (questionUrl != null) {
+                        Surface(
+                            color = Gold.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.padding(end = 16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Timer,
+                                    contentDescription = null,
+                                    tint = Gold,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    timerString,
+                                    color = Gold, 
+                                    fontWeight = FontWeight.Bold, 
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0A0A1A), titleContentColor = TextWhite)
@@ -103,9 +186,11 @@ fun WhiteboardScreen(navController: NavHostController, userViewModel: UserViewMo
                     .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                if (questionImageUri != null) {
+                if (isUploading) {
+                    CircularProgressIndicator(color = Gold)
+                } else if (questionUrl != null) {
                     AsyncImage(
-                        model = questionImageUri,
+                        model = questionUrl,
                         contentDescription = "Question Image",
                         modifier = Modifier.fillMaxSize().padding(12.dp),
                         contentScale = ContentScale.Fit
@@ -169,7 +254,7 @@ fun WhiteboardScreen(navController: NavHostController, userViewModel: UserViewMo
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     items(answers) { answer ->
-                        AnswerItem(answer, currentUser?.uid == answer.userId)
+                        AnswerItem(answer, currentUserUid == answer.userId)
                     }
                 }
 
@@ -197,7 +282,7 @@ fun WhiteboardScreen(navController: NavHostController, userViewModel: UserViewMo
                     FloatingActionButton(
                         onClick = {
                             if (answerText.isNotBlank()) {
-                                userViewModel.postWhiteboardAnswer(answerText)
+                                onPostAnswer(answerText)
                                 answerText = ""
                             }
                         },
@@ -258,6 +343,20 @@ fun AnswerItem(answer: WhiteboardAnswer, isMe: Boolean) {
 
 @Preview(showBackground = true)
 @Composable
-fun WhiteboardScreenPreview() {
-    WhiteboardScreen(rememberNavController())
+fun WhiteboardContentPreview() {
+    StudycircleTheme {
+        WhiteboardContent(
+            answers = listOf(
+                WhiteboardAnswer(id = "1", userName = "Alex Doe", userId = "u1", text = "I think the answer is x = 5 by using the quadratic formula.", timestamp = System.currentTimeMillis()),
+                WhiteboardAnswer(id = "2", userName = "Dr. Smith", userId = "u2", text = "Correct Alex! Remember to check the discriminant first.", timestamp = System.currentTimeMillis()),
+                WhiteboardAnswer(id = "3", userName = "Me", userId = "me", text = "Could you explain step 2 further?", timestamp = System.currentTimeMillis())
+            ),
+            currentUserUid = "me",
+            questionUrl = null,
+            expiresAt = null,
+            onBackClick = {},
+            onUploadQuestion = { _, _, _ -> },
+            onPostAnswer = {}
+        )
+    }
 }

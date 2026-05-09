@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.session
+package com.deepseek.studycircle.Screens.Session
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -27,14 +27,44 @@ import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.Session
 import com.deepseek.studycircle.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateSessionScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
-    var title by remember { mutableStateOf("") }
-    var topic by remember { mutableStateOf("") }
     var isCreating by remember { mutableStateOf(false) }
     var createdSession by remember { mutableStateOf<Session?>(null) }
+    val context = LocalContext.current
 
+    CreateSessionContent(
+        createdSession = createdSession,
+        isCreating = isCreating,
+        onBackClick = { navController.popBackStack() },
+        onCreateSession = { title, topic ->
+            isCreating = true
+            userViewModel.createSession(title, topic) { session ->
+                isCreating = false
+                if (session != null) {
+                    createdSession = session
+                } else {
+                    Toast.makeText(context, "Failed to create session", Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
+        onJoinSession = { sessionId ->
+            navController.navigate("video_call/$sessionId")
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CreateSessionContent(
+    createdSession: Session?,
+    isCreating: Boolean,
+    onBackClick: () -> Unit,
+    onCreateSession: (String, String) -> Unit,
+    onJoinSession: (String) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var topic by remember { mutableStateOf("") }
     val context = LocalContext.current
 
     Scaffold(
@@ -47,7 +77,7 @@ fun CreateSessionScreen(navController: NavHostController, userViewModel: UserVie
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
@@ -91,16 +121,7 @@ fun CreateSessionScreen(navController: NavHostController, userViewModel: UserVie
                             Toast.makeText(context, "Please fill required fields", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
-
-                        isCreating = true
-                        userViewModel.createSession(title, topic) { session ->
-                            isCreating = false
-                            if (session != null) {
-                                createdSession = session
-                            } else {
-                                Toast.makeText(context, "Failed to create session", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                        onCreateSession(title, topic)
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(16.dp),
@@ -124,14 +145,13 @@ fun CreateSessionScreen(navController: NavHostController, userViewModel: UserVie
                 Icon(Icons.Default.CheckCircle, null, tint = StudyTeal, modifier = Modifier.size(100.dp))
                 Spacer(modifier = Modifier.height(24.dp))
                 Text("Session Ready!", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = StudyTextPrimary)
-                Text(text = createdSession?.title ?: "", fontSize = 18.sp, color = StudyTextSecondary)
+                Text(text = createdSession.title, fontSize = 18.sp, color = StudyTextSecondary)
 
                 Spacer(modifier = Modifier.height(48.dp))
 
                 Button(
                     onClick = {
-                        val sessionId = createdSession?.id ?: ""
-                        navController.navigate("video_call/$sessionId")
+                        onJoinSession(createdSession.id)
                     },
                     modifier = Modifier.fillMaxWidth().height(60.dp),
                     shape = RoundedCornerShape(16.dp),
@@ -145,7 +165,7 @@ fun CreateSessionScreen(navController: NavHostController, userViewModel: UserVie
                 Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedButton(
-                    onClick = { navController.popBackStack() },
+                    onClick = onBackClick,
                     modifier = Modifier.fillMaxWidth().height(60.dp),
                     shape = RoundedCornerShape(16.dp)
                 ) {
@@ -153,5 +173,33 @@ fun CreateSessionScreen(navController: NavHostController, userViewModel: UserVie
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CreateSessionContentPreview() {
+    StudycircleTheme {
+        CreateSessionContent(
+            createdSession = null,
+            isCreating = false,
+            onBackClick = {},
+            onCreateSession = { _, _ -> },
+            onJoinSession = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CreateSessionSuccessPreview() {
+    StudycircleTheme {
+        CreateSessionContent(
+            createdSession = Session(id = "1", title = "Advanced Calculus", student = "John Doe"),
+            isCreating = false,
+            onBackClick = {},
+            onCreateSession = { _, _ -> },
+            onJoinSession = {}
+        )
     }
 }

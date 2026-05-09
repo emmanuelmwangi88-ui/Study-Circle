@@ -69,7 +69,7 @@ fun TimerScreen(
 @Composable
 fun ColumnScope.SetupTimer(totalMinutes: Int, selectedSubject: String, viewModel: TimerViewModel) {
     var expanded by remember { mutableStateOf(false) }
-    val subjects = listOf("General Study", "Computer Science", "Mathematics", "Languages", "Medicine", "Physics")
+    val subjects = listOf("General Study", "Technicals ", "Mathematics", "Languages", "Art", "Sciences")
 
     Text("Select Duration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(16.dp))

@@ -48,7 +48,7 @@ fun AboutScreen(navController: NavHostController) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Study Circle is a collaborative learning platform designed to connect students and mentors. Our mission is to facilitate academic exchanges and help everyone achieve their learning goals through peer-to-peer support.",
+                text = "Study Circle is a collaborative learning platform designed to connect students and help them to achieve academic excellence. My mission is to facilitate academic exchanges and help everyone achieve their learning goals through peer-to-peer support..",
                 fontSize = 16.sp,
                 lineHeight = 24.sp
             )

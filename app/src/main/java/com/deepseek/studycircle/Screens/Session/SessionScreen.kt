@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.session
+package com.deepseek.studycircle.Screens.Session
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,25 +31,43 @@ import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.Session
-import com.deepseek.studycircle.models.upcomingSessions
 import com.deepseek.studycircle.navigation.ROUTE_CREATE_SESSION
 import com.deepseek.studycircle.ui.theme.*
 
 /**
  * SessionScreen displays all current and upcoming live study sessions.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
-    val dynamicSessions = userViewModel.allSessions
+    val allCombinedSessions = userViewModel.allSessions
     val currentUserId = userViewModel.userData.value?.uid
 
+    SessionContent(
+        allCombinedSessions = allCombinedSessions,
+        currentUserId = currentUserId,
+        onBackClick = { navController.popBackStack() },
+        onCreateSessionClick = { navController.navigate(ROUTE_CREATE_SESSION) },
+        onDeleteSession = { sessionId -> userViewModel.deleteSession(sessionId) { } },
+        onJoinSession = { sessionId -> navController.navigate("video_call/$sessionId") }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SessionContent(
+    allCombinedSessions: List<Session>,
+    currentUserId: String?,
+    onBackClick: () -> Unit,
+    onCreateSessionClick: () -> Unit,
+    onDeleteSession: (String) -> Unit,
+    onJoinSession: (String) -> Unit
+) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Live Sessions", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
@@ -58,7 +76,7 @@ fun SessionScreen(navController: NavHostController, userViewModel: UserViewModel
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { navController.navigate(ROUTE_CREATE_SESSION) },
+                onClick = onCreateSessionClick,
                 containerColor = StudyPrimary,
                 contentColor = Color.White
             ) {
@@ -74,8 +92,6 @@ fun SessionScreen(navController: NavHostController, userViewModel: UserViewModel
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            val allCombinedSessions = upcomingSessions + dynamicSessions
-
             val liveSessions = allCombinedSessions.filter { it.isLive }
             val scheduledSessions = allCombinedSessions.filter { !it.isLive }
 
@@ -91,11 +107,9 @@ fun SessionScreen(navController: NavHostController, userViewModel: UserViewModel
                 items(liveSessions) { session ->
                     LiveVideoCard(
                         session = session,
-                        navController = navController,
+                        onJoin = { onJoinSession(session.id) },
                         isOwner = session.creatorId == currentUserId,
-                        onDelete = {
-                            userViewModel.deleteSession(session.id) { }
-                        }
+                        onDelete = { onDeleteSession(session.id) }
                     )
                 }
             }
@@ -114,12 +128,8 @@ fun SessionScreen(navController: NavHostController, userViewModel: UserViewModel
                     SessionCard(
                         session = session,
                         isOwner = session.creatorId == currentUserId,
-                        onDelete = {
-                            userViewModel.deleteSession(session.id) { }
-                        },
-                        onJoin = {
-                            navController.navigate("video_call/${session.id}")
-                        }
+                        onDelete = { onDeleteSession(session.id) },
+                        onJoin = { onJoinSession(session.id) }
                     )
                 }
             }
@@ -138,7 +148,7 @@ fun SessionScreen(navController: NavHostController, userViewModel: UserViewModel
 @Composable
 fun LiveVideoCard(
     session: Session,
-    navController: NavHostController,
+    onJoin: () -> Unit,
     isOwner: Boolean,
     onDelete: () -> Unit
 ) {
@@ -206,9 +216,7 @@ fun LiveVideoCard(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
-                    onClick = {
-                        navController.navigate("video_call/${session.id}")
-                    },
+                    onClick = onJoin,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = StudyPrimary),
                     shape = RoundedCornerShape(12.dp)
@@ -287,7 +295,7 @@ fun SessionCard(
                     onClick = { /* Details */ },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, StudyPrimary.copy(alpha =.2f))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, StudyPrimary.copy(alpha = .2f))
                 ) {
                     Text("Details", fontSize = 13.sp, color = StudyTextPrimary)
                 }
@@ -298,6 +306,18 @@ fun SessionCard(
 
 @Preview(showBackground = true)
 @Composable
-fun SessionScreenPreview() {
-    SessionScreen(rememberNavController())
+fun SessionContentPreview() {
+    StudycircleTheme {
+        SessionContent(
+            allCombinedSessions = listOf(
+                Session(id = "1", title = "Advanced Physics", student = "Dr. Smith", isLive = true),
+                Session(id = "2", title = "Linear Algebra", student = "Jane Doe", dateTime = "Oct 25, 14:00")
+            ),
+            currentUserId = "me",
+            onBackClick = {},
+            onCreateSessionClick = {},
+            onDeleteSession = {},
+            onJoinSession = {}
+        )
+    }
 }

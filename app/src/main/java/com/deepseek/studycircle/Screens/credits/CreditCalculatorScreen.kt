@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.credits
+package com.deepseek.studycircle.Screens.credits
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,10 +17,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.compose.rememberNavController
 import com.deepseek.studycircle.data.CreditCalculator
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.CreditTransaction
@@ -245,4 +247,10 @@ fun CreditGuideItem(title: String, amount: String, icon: ImageVector, color: Col
         Text(title, color = StudyTextSecondary, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Text(amount, fontWeight = FontWeight.Bold, color = StudyTextPrimary, fontSize = 14.sp)
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CreditCalculatorScreenPreview() {
+    CreditCalculatorScreen(rememberNavController())
 }

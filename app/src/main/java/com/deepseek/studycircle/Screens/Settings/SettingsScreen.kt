@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.settings
+package com.deepseek.studycircle.Screens.Settings
 
 import android.content.Intent
 import android.net.Uri

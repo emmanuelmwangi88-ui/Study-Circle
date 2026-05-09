@@ -7,10 +7,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,7 +27,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
+import com.deepseek.studycircle.BuildConfig
 import com.deepseek.studycircle.data.UserViewModel
+import com.deepseek.studycircle.navigation.ROUTE_WHITEBOARD
+import io.agora.rtc2.ChannelMediaOptions
 import io.agora.rtc2.Constants
 import io.agora.rtc2.IRtcEngineEventHandler
 import io.agora.rtc2.RtcEngine
@@ -41,23 +46,30 @@ fun VideoCallScreen(
     val context = LocalContext.current
     var isMuted by remember { mutableStateOf(false) }
     var isVideoOff by remember { mutableStateOf(false) }
-    var remoteUid by remember { mutableIntStateOf(0) }
+    val remoteUids = remember { mutableStateListOf<Int>() }
     var rtcEngine by remember { mutableStateOf<RtcEngine?>(null) }
-    
-    val session = userViewModel.allSessions.find { it.id == sessionId }
-    val userData = userViewModel.userData.value
+    var hasPermissions by remember { mutableStateOf(false) }
 
-    // Permission Handling
+    val allSessions = userViewModel.allSessions
+    val allGroups by userViewModel.allStudyGroups.collectAsState()
+    val userData by userViewModel.userData
+    
+    val session = remember(allSessions, sessionId) { allSessions.find { it.id == sessionId } }
+    val group = remember(allGroups, sessionId) { allGroups.find { it.id.toString() == sessionId } }
+
+    val callTitle = session?.title ?: group?.name ?: "Study Call"
+
     val permissions = arrayOf(
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.CAMERA
     )
-    
+
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissionsMap ->
-        val areGranted = permissionsMap.values.all { it }
-        if (!areGranted) {
+        if (permissionsMap.values.all { it }) {
+            hasPermissions = true
+        } else {
             Toast.makeText(context, "Permissions required for video call", Toast.LENGTH_SHORT).show()
             navController.popBackStack()
         }
@@ -67,33 +79,52 @@ fun VideoCallScreen(
         launcher.launch(permissions)
     }
 
-    // Agora Engine Lifecycle
-    DisposableEffect(Unit) {
-        val config = RtcEngineConfig()
-        config.mContext = context
-        config.mAppId = "44446c65636b446565705365656b3132" // Placeholder / Example ID
-        config.mEventHandler = object : IRtcEngineEventHandler() {
-            override fun onJoinChannelSuccess(channel: String?, uid: Int, elapsed: Int) {
-                // Local user joined
-            }
+    DisposableEffect(hasPermissions) {
+        if (!hasPermissions) return@DisposableEffect onDispose { }
 
-            override fun onUserJoined(uid: Int, elapsed: Int) {
-                remoteUid = uid
-            }
-
-            override fun onUserOffline(uid: Int, reason: Int) {
-                if (remoteUid == uid) remoteUid = 0
-            }
+        val appId = BuildConfig.AGORA_APP_ID
+        if (appId.isNullOrBlank() || appId == "null") {
+            Toast.makeText(context, "Agora App ID is not configured", Toast.LENGTH_LONG).show()
         }
 
         try {
+            val config = RtcEngineConfig().apply {
+                mContext = context
+                mAppId = appId
+                mEventHandler = object : IRtcEngineEventHandler() {
+                    override fun onJoinChannelSuccess(channel: String?, uid: Int, elapsed: Int) {
+                        // Successfully joined
+                    }
+                    override fun onUserJoined(uid: Int, elapsed: Int) {
+                        if (!remoteUids.contains(uid)) {
+                            remoteUids.add(uid)
+                        }
+                    }
+                    override fun onUserOffline(uid: Int, reason: Int) {
+                        remoteUids.remove(uid)
+                    }
+                    override fun onError(err: Int) {
+                        super.onError(err)
+                    }
+                }
+            }
+
             val engine = RtcEngine.create(config)
             engine.enableVideo()
             engine.startPreview()
-            engine.joinChannel(null, sessionId, null, 0)
+            
+            val options = ChannelMediaOptions()
+            options.clientRoleType = Constants.CLIENT_ROLE_BROADCASTER
+            options.channelProfile = Constants.CHANNEL_PROFILE_COMMUNICATION
+            options.publishCameraTrack = true
+            options.publishMicrophoneTrack = true
+            
+            val token = if (BuildConfig.AGORA_TOKEN == "YOUR_AGORA_TOKEN" || BuildConfig.AGORA_TOKEN == "null") null else BuildConfig.AGORA_TOKEN
+            engine.joinChannel(token, sessionId, 0, options)
+            
             rtcEngine = engine
         } catch (e: Exception) {
-            e.printStackTrace()
+            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
 
         onDispose {
@@ -103,101 +134,95 @@ fun VideoCallScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A))) {
-        // Main Video (Remote User)
-        if (remoteUid != 0) {
-            AndroidView(
-                factory = { ctx ->
-                    SurfaceView(ctx).apply {
-                        rtcEngine?.setupRemoteVideo(
-                            VideoCanvas(this, VideoCanvas.RENDER_MODE_HIDDEN, remoteUid)
+        // Remote Videos
+        if (remoteUids.isNotEmpty()) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(if (remoteUids.size <= 1) 1 else 2),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                items(remoteUids) { uid ->
+                    Box(modifier = Modifier.fillMaxWidth().aspectRatio(if (remoteUids.size <= 1) 0.6f else 1f)) {
+                        AndroidView(
+                            factory = { ctx ->
+                                SurfaceView(ctx).apply {
+                                    rtcEngine?.setupRemoteVideo(VideoCanvas(this, VideoCanvas.RENDER_MODE_HIDDEN, uid))
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
                         )
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.padding(8.dp).align(Alignment.BottomStart)
+                        ) {
+                            Text(
+                                text = "Learner $uid",
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                fontSize = 10.sp
+                            )
+                        }
                     }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+                }
+            }
         } else {
-            // Placeholder for Peer
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                AsyncImage(
-                    model = "",
-                    contentDescription = "Peer Video",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Surface(
-                    color = Color.Black.copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        "Waiting for others to join...",
-                        color = Color.White,
-                        modifier = Modifier.padding(16.dp),
-                        fontSize = 14.sp
-                    )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White.copy(alpha = 0.3f))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Waiting for peers to join...", color = Color.White.copy(alpha = 0.6f))
                 }
             }
         }
 
-        // Overlay for Peer Name
+        // Call Title Tag
         Surface(
             color = Color.Black.copy(alpha = 0.5f),
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.padding(16.dp).align(Alignment.TopStart)
         ) {
             Text(
-                text = session?.student ?: "Peer",
+                text = callTitle,
                 color = Color.White,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 fontSize = 14.sp
             )
         }
 
-        // Self Video Preview (Small overlay)
+        // Local Preview (Picture-in-Picture)
         Card(
-            modifier = Modifier
-                .size(120.dp, 180.dp)
-                .align(Alignment.TopEnd)
-                .padding(16.dp),
+            modifier = Modifier.size(120.dp, 180.dp).align(Alignment.TopEnd).padding(16.dp),
             shape = RoundedCornerShape(12.dp),
             elevation = CardDefaults.cardElevation(8.dp)
         ) {
             Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray)) {
-                if (!isVideoOff) {
+                if (!isVideoOff && hasPermissions) {
                     AndroidView(
                         factory = { ctx ->
                             SurfaceView(ctx).apply {
-                                rtcEngine?.setupLocalVideo(
-                                    VideoCanvas(this, VideoCanvas.RENDER_MODE_HIDDEN, 0)
-                                )
+                                rtcEngine?.setupLocalVideo(VideoCanvas(this, VideoCanvas.RENDER_MODE_HIDDEN, 0))
                             }
                         },
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    val imageUrl = if (userData?.imageUri?.isNotEmpty() == true) userData.imageUri else "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+                    val imageUrl = if (userData?.imageUri?.isNotEmpty() == true) userData?.imageUri ?: "" else "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
                     AsyncImage(
                         model = imageUrl,
-                        contentDescription = "My Avatar",
+                        contentDescription = null,
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
                         contentScale = ContentScale.Crop
                     )
                     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
-                    Icon(
-                        Icons.Default.VideocamOff,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp).align(Alignment.Center),
-                        tint = Color.White
-                    )
+                    Icon(Icons.Default.VideocamOff, null, modifier = Modifier.align(Alignment.Center), tint = Color.White)
                 }
             }
         }
 
         // Bottom Controls
         Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(24.dp)
-                .fillMaxWidth(),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp).fillMaxWidth(),
             color = Color.Black.copy(alpha = 0.7f),
             shape = RoundedCornerShape(32.dp)
         ) {
@@ -211,7 +236,7 @@ fun VideoCallScreen(
                         isMuted = !isMuted
                         rtcEngine?.muteLocalAudioStream(isMuted)
                     },
-                    modifier = Modifier.background(if (isMuted) Color.Red else Color.White.copy(alpha = 0.2f), CircleShape)
+                    modifier = Modifier.size(48.dp).background(if (isMuted) Color.Red else Color.White.copy(alpha = 0.2f), CircleShape)
                 ) {
                     Icon(if (isMuted) Icons.Default.MicOff else Icons.Default.Mic, null, tint = Color.White)
                 }
@@ -221,9 +246,16 @@ fun VideoCallScreen(
                         isVideoOff = !isVideoOff
                         rtcEngine?.muteLocalVideoStream(isVideoOff)
                     },
-                    modifier = Modifier.background(if (isVideoOff) Color.Red else Color.White.copy(alpha = 0.2f), CircleShape)
+                    modifier = Modifier.size(48.dp).background(if (isVideoOff) Color.Red else Color.White.copy(alpha = 0.2f), CircleShape)
                 ) {
                     Icon(if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, null, tint = Color.White)
+                }
+
+                IconButton(
+                    onClick = { navController.navigate(ROUTE_WHITEBOARD) },
+                    modifier = Modifier.size(48.dp).background(Color.White.copy(alpha = 0.2f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Gesture, "Whiteboard", tint = Color.White)
                 }
 
                 IconButton(
@@ -231,20 +263,6 @@ fun VideoCallScreen(
                     modifier = Modifier.size(56.dp).background(Color.Red, CircleShape)
                 ) {
                     Icon(Icons.Default.CallEnd, null, tint = Color.White, modifier = Modifier.size(32.dp))
-                }
-
-                IconButton(
-                    onClick = { /* Chat logic can be added here */ },
-                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.Chat, null, tint = Color.White)
-                }
-
-                IconButton(
-                    onClick = { /* Participants list */ },
-                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                ) {
-                    Icon(Icons.Default.People, null, tint = Color.White)
                 }
             }
         }

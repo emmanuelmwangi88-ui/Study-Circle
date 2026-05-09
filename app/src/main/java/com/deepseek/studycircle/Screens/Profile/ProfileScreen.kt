@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.profile
+package com.deepseek.studycircle.Screens.Profile
 
 import android.net.Uri
 import android.widget.Toast
@@ -35,8 +35,7 @@ import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.BadgeItem
-import com.deepseek.studycircle.models.User
-import com.deepseek.studycircle.models.badges
+import com.deepseek.studycircle.models.allAvailableBadges
 import com.deepseek.studycircle.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -48,7 +47,7 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
     val user by userViewModel.userData
     val snackbarHostState = remember { SnackbarHostState() }
     
-    var showEditDialog by remember { mutableStateOf(false) }
+    val showEditDialog = remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf("") }
     var editedBio by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -67,9 +66,9 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
         }
     }
 
-    if (showEditDialog) {
+    if (showEditDialog.value) {
         AlertDialog(
-            onDismissRequest = { if (!isUploading) showEditDialog = false },
+            onDismissRequest = { if (!isUploading) showEditDialog.value = false },
             title = { Text("Customize Profile", fontWeight = FontWeight.Bold) },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -134,11 +133,11 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                         }
                         isUploading = true
                         if (selectedImageUri != null) {
-                            userViewModel.uploadFileToCloudinary(context, selectedImageUri!!) { imageUrl ->
+                            userViewModel.uploadFileToCloudinary(context, selectedImageUri!!) { imageUrl, _, error ->
                                 if (imageUrl != null) {
-                                    userViewModel.updateUserProfile(context, editedName, editedBio, imageUrl) { success ->
+                                    userViewModel.updateUserProfile(editedName, editedBio, imageUrl) { success ->
                                         if (success) {
-                                            showEditDialog = false
+                                            showEditDialog.value = false
                                             selectedImageUri = null
                                             scope.launch { snackbarHostState.showSnackbar("Profile updated!") }
                                         } else {
@@ -148,12 +147,13 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                                     }
                                 } else {
                                     isUploading = false
+                                    scope.launch { snackbarHostState.showSnackbar(error ?: "Image upload failed.") }
                                 }
                             }
                         } else {
-                            userViewModel.updateUserProfile(context, editedName, editedBio, user?.imageUri ?: "") { success ->
+                            userViewModel.updateUserProfile(editedName, editedBio, user?.imageUri ?: "") { success ->
                                 if (success) {
-                                    showEditDialog = false
+                                    showEditDialog.value = false
                                     scope.launch { snackbarHostState.showSnackbar("Profile updated!") }
                                 } else {
                                     scope.launch { snackbarHostState.showSnackbar("Failed to update database.") }
@@ -172,7 +172,7 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showEditDialog = false }, enabled = !isUploading) {
+                TextButton(onClick = { showEditDialog.value = false }, enabled = !isUploading) {
                     Text("Cancel")
                 }
             }
@@ -190,7 +190,7 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showEditDialog = true }) {
+                    TextButton(onClick = { showEditDialog.value = true }) {
                         Text("Edit", fontWeight = FontWeight.Bold,
                             color = StudyPrimary,
                             fontSize = 20.sp)
@@ -280,13 +280,23 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
-            Text("Expertise Badges", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Spacer(modifier = Modifier.height(16.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(badges) { badge ->
-                    BadgeCard(badge)
+            val userBadges = user?.badges ?: emptyList()
+            val displayedBadges = allAvailableBadges.filter { it.id in userBadges }
+
+            if (displayedBadges.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(32.dp))
+                Text("Expertise Badges", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(16.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    items(displayedBadges) { badge ->
+                        BadgeCard(badge)
+                    }
                 }
+            } else {
+                Spacer(modifier = Modifier.height(32.dp))
+                Text("Expertise Badges", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Complete activities to earn badges!", color = StudyTextSecondary, fontSize = 14.sp)
             }
         }
     }

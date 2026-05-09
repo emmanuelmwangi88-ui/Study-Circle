@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.screens.dashboard
+package com.deepseek.studycircle.Screens.Dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,11 +27,10 @@ import androidx.navigation.compose.rememberNavController
 import com.deepseek.studycircle.data.CreditCalculator
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.Resource
-import com.deepseek.studycircle.models.trendingResources
+import com.deepseek.studycircle.models.User
 import com.deepseek.studycircle.navigation.*
 import com.deepseek.studycircle.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     navController: NavHostController,
@@ -39,14 +38,73 @@ fun DashboardScreen(
     onProfileClick: () -> Unit = { navController.navigate(ROUTE_PROFILE) },
     userViewModel: UserViewModel = viewModel()
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
     val user by userViewModel.userData
+    val materials = userViewModel.allMaterials
+    
+    DashboardContent(
+        user = user,
+        materials = materials,
+        onNotificationClick = onNotificationClick,
+        onProfileClick = onProfileClick,
+        onCreditsClick = { navController.navigate(ROUTE_CREDITS) },
+        onLibraryClick = { navController.navigate(ROUTE_KNOWLEDGE) },
+        onTimerClick = { navController.navigate(ROUTE_TIMER) },
+        onGroupsClick = { navController.navigate(ROUTE_GROUP) },
+        onSettingsClick = { navController.navigate(ROUTE_SETTINGS) },
+        onSessionClick = { navController.navigate(ROUTE_SESSION) },
+        onWhiteboardClick = { navController.navigate(ROUTE_WHITEBOARD) },
+        onUploadClick = { navController.navigate(ROUTE_UPLOAD) },
+        onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DashboardContent(
+    user: User?,
+    materials: List<com.deepseek.studycircle.models.UploadMaterial>,
+    onNotificationClick: () -> Unit,
+    onProfileClick: () -> Unit,
+    onCreditsClick: () -> Unit,
+    onLibraryClick: () -> Unit,
+    onTimerClick: () -> Unit,
+    onGroupsClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onSessionClick: () -> Unit,
+    onWhiteboardClick: () -> Unit,
+    onUploadClick: () -> Unit,
+    onResourceClick: (String) -> Unit
+) {
+    var selectedTab by remember { mutableIntStateOf(0) }
     val creditsValue = user?.credits ?: 0L
     
     val studyTimeMillis = user?.studyTimeMillis ?: 0L
     val hours = studyTimeMillis / (1000 * 60 * 60)
     val minutes = (studyTimeMillis % (1000 * 60 * 60)) / (1000 * 60)
     val studyTimeString = if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+
+    val recentResources = remember(materials) {
+        materials.map { mat ->
+            Resource(
+                id = mat.id,
+                title = mat.title,
+                author = mat.author,
+                authorBadge = "Student",
+                tag = "NEW",
+                type = mat.fileType,
+                pages = 1,
+                size = "N/A",
+                downloads = 0,
+                rating = 5.0,
+                reviews = 0,
+                category = mat.category,
+                cost = mat.cost,
+                isBookmarked = false,
+                fileUrl = mat.fileUrl,
+                authorImage = mat.authorImage
+            )
+        }.sortedByDescending { it.id }.take(5)
+    }
 
     Scaffold(
         topBar = {
@@ -74,10 +132,10 @@ fun DashboardScreen(
                     Surface(
                         color = StudyAccentOrange,
                         shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.padding(end = 8.dp).clickable { navController.navigate(ROUTE_CREDITS) }
+                        modifier = Modifier.padding(end = 8.dp).clickable { onCreditsClick() }
                     ) {
                         Text(
-                            "📈  ${CreditCalculator.formatCredits(creditsValue)}",
+                            "📈 CR ${CreditCalculator.formatCredits(creditsValue)}",
                             color = StudyAccentOrangeText,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             fontWeight = FontWeight.ExtraBold,
@@ -110,7 +168,7 @@ fun DashboardScreen(
                     selected = selectedTab == 1,
                     onClick = { 
                         selectedTab = 1
-                        navController.navigate(ROUTE_KNOWLEDGE)
+                        onLibraryClick()
                     }
                 )
                 NavigationBarItem(
@@ -119,7 +177,7 @@ fun DashboardScreen(
                     selected = selectedTab == 2,
                     onClick = {
                         selectedTab = 2
-                        navController.navigate(ROUTE_TIMER)
+                        onTimerClick()
                     }
                 )
                 NavigationBarItem(
@@ -128,7 +186,7 @@ fun DashboardScreen(
                     selected = selectedTab == 3,
                     onClick = { 
                         selectedTab = 3
-                        navController.navigate(ROUTE_GROUP)
+                        onGroupsClick()
                     }
                 )
                 NavigationBarItem(
@@ -137,7 +195,7 @@ fun DashboardScreen(
                     selected = selectedTab == 4,
                     onClick = {
                         selectedTab = 4
-                        navController.navigate(ROUTE_SETTINGS)
+                        onSettingsClick()
                     }
                 )
             }
@@ -201,14 +259,14 @@ fun DashboardScreen(
                         icon = Icons.AutoMirrored.Filled.LibraryBooks,
                         background = StudyBlue,
                         modifier = Modifier.weight(1f),
-                        onClick = { navController.navigate(ROUTE_KNOWLEDGE) }
+                        onClick = onLibraryClick
                     )
                     Homecard(
                         title = "Live Sessions",
                         icon = Icons.Filled.VideoLibrary,
                         background = StudyTeal,
                         modifier = Modifier.weight(1f),
-                        onClick = { navController.navigate(ROUTE_SESSION) }
+                        onClick = onSessionClick
                     )
                 }
             }
@@ -223,14 +281,14 @@ fun DashboardScreen(
                         icon = Icons.Filled.Draw,
                         background = Color(0xFF9C27B0),
                         modifier = Modifier.weight(1f),
-                        onClick = { navController.navigate(ROUTE_WHITEBOARD) }
+                        onClick = onWhiteboardClick
                     )
                     Homecard(
                         title = "Upload",
                         icon = Icons.Filled.CloudUpload,
                         background = StudyAccentOrangeText,
                         modifier = Modifier.weight(1f),
-                        onClick = { navController.navigate(ROUTE_UPLOAD) }
+                        onClick = onUploadClick
                     )
                 }
             }
@@ -242,20 +300,26 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Featured Content",
+                        "Recent Materials",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = StudyTextPrimary
                     )
-                    TextButton(onClick = { navController.navigate(ROUTE_KNOWLEDGE) }) {
+                    TextButton(onClick = onLibraryClick) {
                         Text("View all", color = StudyPrimary)
                     }
                 }
             }
 
-            items(trendingResources) { resource ->
-                ResourceItem(resource) {
-                    navController.navigate("resource/${resource.id}")
+            if (recentResources.isEmpty()) {
+                item {
+                    Text("No materials uploaded yet.", color = StudyTextSecondary, modifier = Modifier.padding(vertical = 16.dp))
+                }
+            } else {
+                items(recentResources) { resource ->
+                    ResourceItem(resource) {
+                        onResourceClick(resource.id.toString())
+                    }
                 }
             }
         }
@@ -368,6 +432,22 @@ fun ResourceItem(resource: Resource, onClick: () -> Unit) {
 
 @Preview(showBackground = true)
 @Composable
-fun DashboardPreview() {
-    DashboardScreen(rememberNavController())
+fun DashboardContentPreview() {
+    StudycircleTheme {
+        DashboardContent(
+            user = User(name = "John Doe", credits = 1500, studyTimeMillis = 3600000),
+            materials = emptyList(),
+            onNotificationClick = {},
+            onProfileClick = {},
+            onCreditsClick = {},
+            onLibraryClick = {},
+            onTimerClick = {},
+            onGroupsClick = {},
+            onSettingsClick = {},
+            onSessionClick = {},
+            onWhiteboardClick = {},
+            onUploadClick = {},
+            onResourceClick = {}
+        )
+    }
 }

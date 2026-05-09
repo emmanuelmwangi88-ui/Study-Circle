@@ -8,13 +8,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.deepseek.studycircle.data.UserViewModel
+import com.deepseek.studycircle.models.Session
 import com.deepseek.studycircle.ui.theme.StudyBackground
 import com.deepseek.studycircle.ui.theme.StudySurface
+import com.deepseek.studycircle.ui.theme.StudycircleTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionDetailsScreen(
     navController: NavHostController,
@@ -23,12 +25,24 @@ fun SessionDetailsScreen(
 ) {
     val session = userViewModel.allSessions.find { it.id == sessionId }
 
+    SessionDetailsContent(
+        session = session,
+        onBackClick = { navController.popBackStack() }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SessionDetailsContent(
+    session: Session?,
+    onBackClick: () -> Unit
+) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Session Details", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
@@ -61,5 +75,22 @@ fun SessionDetailsScreen(
                 Text("Session not found.")
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SessionDetailsContentPreview() {
+    StudycircleTheme {
+        SessionDetailsContent(
+            session = Session(
+                id = "1",
+                title = "Advanced Physics",
+                topic = "Quantum Mechanics",
+                student = "Dr. Smith",
+                dateTime = "Oct 25, 14:00"
+            ),
+            onBackClick = {}
+        )
     }
 }

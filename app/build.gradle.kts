@@ -1,9 +1,20 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.google.gms.google.services)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.android)
 }
+
+// Read secrets
+val secretsFile = project.rootProject.file("secrets.properties")
+val secrets = Properties()
+if (secretsFile.exists()) {
+    secrets.load(FileInputStream(secretsFile))
+}
+
 
 android {
     namespace = "com.deepseek.studycircle"
@@ -18,6 +29,10 @@ android {
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // Pass secrets to the build
+        buildConfigField("String", "AGORA_APP_ID", "\"${secrets.getProperty("AGORA_APP_ID")}\"")
+        buildConfigField("String", "AGORA_TOKEN", "\"${secrets.getProperty("AGORA_TOKEN")}\"")
     }
 
     buildTypes {
@@ -36,6 +51,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     
     kotlin {
@@ -49,10 +65,17 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/DEPENDENCIES"
         }
+        jniLibs {
+            pickFirsts += "**/libaosl.so"
+            pickFirsts += "**/libagora-rtc-sdk.so"
+        }
     }
 }
 
 dependencies {
+    // Exclude Agora JARs from libs directory as they conflict with Maven dependencies
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"), "exclude" to listOf("agora*.jar", "agorachat*.jar", "Agora*.aar"))))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -96,6 +119,7 @@ dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.androidx.multidex)
     
-    // Agora SDK for Video Calls
-    implementation("io.agora.rtc:full-sdk:4.1.0")
+    // Agora SDKs
+    implementation("io.agora.rtc:full-sdk:4.6.3")
+    implementation("io.agora.rtc:chat-sdk:1.3.2")
 }

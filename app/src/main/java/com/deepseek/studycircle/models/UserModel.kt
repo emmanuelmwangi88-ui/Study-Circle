@@ -17,14 +17,18 @@ data class User(
     val isFirstLogin: Boolean = true,
     val lastLogin: Long = 0,
     val studyTimeMillis: Long = 0,
-    val bookmarks: Map<String, Boolean> = emptyMap()
+    val bookmarks: Map<String, Boolean>? = emptyMap(),
+    val joinedGroups: Map<String, Boolean>? = emptyMap(),
+    val badges: List<String>? = emptyList()
 )
 
 @Keep
 @IgnoreExtraProperties
 data class Review(
-    val id: Int = 0,
+    val id: Any? = null,
+    val userId: String = "",
     val user: String = "",
+    val userImage: String = "",
     val rating: Double = 0.0,
     val text: String = "",
     val date: String = ""
@@ -49,8 +53,10 @@ data class UploadMaterial(
     val category: String = "",
     val description: String = "",
     val fileUrl: String = "",
+    val fileType: String = "PDF",
     val author: String = "",
     val authorId: String = "",
+    val authorImage: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val cost: Long = 0
 )
