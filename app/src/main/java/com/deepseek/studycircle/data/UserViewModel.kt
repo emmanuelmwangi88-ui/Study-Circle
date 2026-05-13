@@ -14,6 +14,7 @@ import com.deepseek.studycircle.models.*
 import com.deepseek.studycircle.network.RetrofitClient
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.*
+import com.google.firebase.messaging.FirebaseMessaging
 import io.agora.CallBack
 import io.agora.MessageListener
 import io.agora.chat.ChatClient
@@ -99,9 +100,7 @@ class UserViewModel : ViewModel() {
                 if (msg.chatType == AgoraMessage.ChatType.GroupChat) {
                     val groupId = msg.to
                     val chatMsg = mapAgoraMessageToChatMessage(msg)
-                    val currentList = _groupMessages[groupId]?.toMutableList() ?: mutableListOf()
-                    currentList.add(chatMsg)
-                    _groupMessages[groupId] = currentList.distinctBy { it.id }.sortedBy { it.timestamp }
+                    updateLocalMessages(groupId, chatMsg)
                 }
             }
         }
@@ -134,6 +133,16 @@ class UserViewModel : ViewModel() {
             lastCheckedBonusSession = null
             startUserSpecificListeners(newUid)
             ensureAgoraLoggedIn(newUid)
+            refreshFCMToken(newUid)
+        }
+    }
+
+    private fun refreshFCMToken(uid: String) {
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val token = task.result
+                database.child("users").child(uid).child("fcmToken").setValue(token)
+            }
         }
     }
 
@@ -295,6 +304,8 @@ class UserViewModel : ViewModel() {
         joinedGroupIds.forEach { groupId ->
             if (!chatListeners.containsKey(groupId)) {
                 startChatListener(groupId)
+                // Subscribe to FCM topic for this group
+                FirebaseMessaging.getInstance().subscribeToTopic("group_$groupId")
             }
         }
     }
@@ -411,8 +422,15 @@ class UserViewModel : ViewModel() {
     private fun clearUserSpecificData() {
         userListener?.let { (ref, listener) -> ref.removeEventListener(listener) }
         transListener?.let { (query, listener) -> query.removeEventListener(listener) }
-        chatListeners.values.forEach { (ref, listener) -> ref.removeEventListener(listener) }
+        chatListeners.values.forEach { (ref, listener) ->
+            ref.removeEventListener(listener)
+        }
         
+        // Unsubscribe from topics when logging out
+        _userStudyGroups.value.forEach { group ->
+            FirebaseMessaging.getInstance().unsubscribeFromTopic("group_${group.id}")
+        }
+
         userListener = null
         transListener = null
         chatListeners.clear()
@@ -437,6 +455,86 @@ class UserViewModel : ViewModel() {
             timestamp = System.currentTimeMillis()
         )
         database.child("whiteboard_answers").child(answerId).setValue(answer)
+    }
+
+    fun voteWhiteboardAnswer(answerId: String, authorUid: String, voteType: Int, onComplete: (Boolean) -> Unit = {}) {
+        val uid = auth.currentUser?.uid ?: return onComplete(false)
+        if (uid == authorUid) {
+            onComplete(false)
+            return
+        }
+
+        val answerRef = database.child("whiteboard_answers").child(answerId)
+        answerRef.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(mutableData: MutableData): Transaction.Result {
+                val answer = mutableData.getValue(WhiteboardAnswer::class.java) ?: return Transaction.success(mutableData)
+                
+                val currentVoters = answer.voters?.toMutableMap() ?: mutableMapOf()
+                val previousVote = currentVoters[uid] ?: 0
+                
+                if (previousVote == voteType) {
+                    // Remove vote
+                    currentVoters.remove(uid)
+                    if (voteType == 1) {
+                        mutableData.child("upvotes").value = (answer.upvotes - 1).coerceAtLeast(0)
+                    } else {
+                        mutableData.child("downvotes").value = (answer.downvotes - 1).coerceAtLeast(0)
+                    }
+                } else {
+                    // Change or add vote
+                    if (previousVote == 1) {
+                        mutableData.child("upvotes").value = (answer.upvotes - 1).coerceAtLeast(0)
+                    } else if (previousVote == -1) {
+                        mutableData.child("downvotes").value = (answer.downvotes - 1).coerceAtLeast(0)
+                    }
+                    
+                    if (voteType == 1) {
+                        mutableData.child("upvotes").value = answer.upvotes + 1
+                    } else {
+                        mutableData.child("downvotes").value = answer.downvotes + 1
+                    }
+                    currentVoters[uid] = voteType
+                }
+                
+                mutableData.child("voters").value = currentVoters
+                return Transaction.success(mutableData)
+            }
+
+            override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {
+                if (committed && error == null) {
+                    // Update reputation based on vote
+                    updateReputation(authorUid, if (voteType == 1) 0.5 else -0.2)
+                }
+                onComplete(committed && error == null)
+            }
+        })
+    }
+
+    private fun updateReputation(targetUid: String, amount: Double) {
+        val targetRef = database.child("users").child(targetUid)
+        targetRef.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(mutableData: MutableData): Transaction.Result {
+                val u = mutableData.getValue(User::class.java) ?: return Transaction.success(mutableData)
+                val newReputation = (u.reputation + amount).coerceAtLeast(0.0)
+                mutableData.child("reputation").value = newReputation
+                
+                // Badge Logic
+                val currentBadges = u.badges?.toMutableList() ?: mutableListOf()
+                var badgesChanged = false
+                val thresholds = mapOf(10.0 to "helpful", 50.0 to "expert", 100.0 to "scholar", 500.0 to "legend")
+                
+                thresholds.forEach { (threshold, badge) ->
+                    if (newReputation >= threshold && !currentBadges.contains(badge)) {
+                        currentBadges.add(badge)
+                        badgesChanged = true
+                    }
+                }
+                if (badgesChanged) mutableData.child("badges").value = currentBadges
+                
+                return Transaction.success(mutableData)
+            }
+            override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {}
+        })
     }
 
     fun setWhiteboardQuestion(imageUrl: String) {
@@ -493,7 +591,9 @@ class UserViewModel : ViewModel() {
             fileUrl = url,
             fileType = fileType.uppercase(),
             cost = CreditCalculator.UPLOAD_REWARD,
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            fileSize = "${(1..10).random()}.${(0..9).random()} MB",
+            pages = (1..50).random()
         )
         database.child("materials").child(materialId).setValue(material).addOnCompleteListener { task ->
             if (task.isSuccessful) {
@@ -576,9 +676,35 @@ class UserViewModel : ViewModel() {
         }
     }
 
+    fun clearTransactions(onComplete: (Boolean) -> Unit) {
+        val uid = auth.currentUser?.uid ?: return onComplete(false)
+        database.child("transactions").orderByChild("userId").equalTo(uid).addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val updates = mutableMapOf<String, Any?>()
+                for (child in snapshot.children) {
+                    updates[child.key!!] = null
+                }
+                database.child("transactions").updateChildren(updates).addOnCompleteListener { 
+                    onComplete(it.isSuccessful)
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                onComplete(false)
+            }
+        })
+    }
+
     fun toggleBookmark(resourceId: String, isBookmarked: Boolean, onResult: (Boolean) -> Unit) {
         val uid = auth.currentUser?.uid ?: return onResult(false)
         database.child("users").child(uid).child("bookmarks").child(resourceId).setValue(if (isBookmarked) true else null)
+            .addOnCompleteListener { task ->
+                onResult(task.isSuccessful)
+            }
+    }
+
+    fun unlockResource(resourceId: String, onResult: (Boolean) -> Unit) {
+        val uid = auth.currentUser?.uid ?: return onResult(false)
+        database.child("users").child(uid).child("unlockedResources").child(resourceId).setValue(true)
             .addOnCompleteListener { task ->
                 onResult(task.isSuccessful)
             }
@@ -647,7 +773,7 @@ class UserViewModel : ViewModel() {
         )
         database.child("study_groups").child(groupId).setValue(group)
         joinStudyGroup(groupId)
-        
+
         // Register group in Agora Chat
         Thread {
             try {
@@ -661,7 +787,12 @@ class UserViewModel : ViewModel() {
         val safeUid = uid.replace(".", "_")
         database.child("study_groups").child(groupId).child("members").child(safeUid).setValue(true)
         database.child("users").child(uid).child("joinedGroups").child(groupId).setValue(true)
-        
+        database.child("study_groups").child(groupId).child("members").child(safeUid).setValue(true)
+        database.child("users").child(uid).child("joinedGroups").child(groupId).setValue(true)
+
+        // Subscribe to FCM topic
+        FirebaseMessaging.getInstance().subscribeToTopic("group_$groupId")
+
         // Join in Agora
         Thread {
             try { ChatClient.getInstance().groupManager().joinGroup(groupId) } catch (_: Exception) {}
@@ -689,6 +820,7 @@ class UserViewModel : ViewModel() {
         ChatClient.getInstance().chatManager().sendMessage(message)
 
         // 2. Also save to Firebase as backup/history
+        // This triggers the Realtime Database listeners on other devices
         val messageId = message.msgId
         val chatMessage = ChatMessage(
             id = messageId,
@@ -703,25 +835,43 @@ class UserViewModel : ViewModel() {
         database.child("group_chats").child(groupId).child(messageId).setValue(chatMessage)
         
         // Update local state immediately for better UX
+        updateLocalMessages(groupId, chatMessage)
+
+        // Note: For actual FCM notifications to other users, you'd typically have a Firebase Cloud Function
+        // listening to 'group_chats/{groupId}/{messageId}' and sending to topic 'group_{groupId}'.
+    }
+
+    private fun updateLocalMessages(groupId: String, chatMsg: ChatMessage) {
         val currentList = _groupMessages[groupId]?.toMutableList() ?: mutableListOf()
-        currentList.add(chatMessage)
-        _groupMessages[groupId] = currentList.distinctBy { it.id }.sortedBy { it.timestamp }
+        if (currentList.none { it.id == chatMsg.id }) {
+            currentList.add(chatMsg)
+            _groupMessages[groupId] = currentList.distinctBy { it.id }.sortedBy { it.timestamp }
+        }
     }
 
     fun fetchReviews(resourceId: String) {
         database.child("reviews").child(resourceId).addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 _resourceReviews.clear()
+                val list = mutableListOf<Review>()
                 snapshot.children.forEach { data ->
                     try {
-                        data.getValue(Review::class.java)?.let { _resourceReviews.add(it) }
+                        data.getValue(Review::class.java)?.let { list.add(it) }
                     } catch (e: Exception) {
                         Log.e("UserViewModel", "Review mapping error: ${e.message}")
                     }
                 }
+                _resourceReviews.addAll(list)
+                updateMaterialRating(resourceId, list)
             }
             override fun onCancelled(error: DatabaseError) {}
         })
+    }
+
+    private fun updateMaterialRating(resourceId: String, reviews: List<Review>) {
+        if (reviews.isEmpty()) return
+        val avgRating = reviews.map { it.rating }.average()
+        database.child("materials").child(resourceId).child("rating").setValue(avgRating)
     }
 
     fun submitReview(resourceId: String, rating: Float, text: String, onComplete: (Boolean) -> Unit) {
@@ -739,6 +889,22 @@ class UserViewModel : ViewModel() {
         database.child("reviews").child(resourceId).child(reviewId).setValue(review).addOnCompleteListener {
             onComplete(it.isSuccessful)
         }
+    }
+
+    fun incrementDownloadCount(resourceId: String) {
+        database.child("materials").child(resourceId).child("downloadCount").runTransaction(object : Transaction.Handler {
+            override fun doTransaction(mutableData: MutableData): Transaction.Result {
+                val current = mutableData.getValue(Int::class.java) ?: 0
+                mutableData.value = current + 1
+                return Transaction.success(mutableData)
+            }
+            override fun onComplete(p0: DatabaseError?, p1: Boolean, p2: DataSnapshot?) {}
+        })
+    }
+
+    fun likeUser(targetUid: String, onComplete: (Boolean) -> Unit = {}) {
+        updateReputation(targetUid, 1.0)
+        onComplete(true)
     }
     
     override fun onCleared() {

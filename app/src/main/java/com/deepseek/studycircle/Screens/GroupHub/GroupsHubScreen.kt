@@ -71,9 +71,13 @@ fun GroupsHubContent(
     val categories = listOf("All", "Science", "Mathematics", "Arts", "Languages", "Technicals", "Religion")
     var showCreateGroupDialog by remember { mutableStateOf(false) }
 
-    val filteredGroups = allGroups.filter { group ->
+    val filteredAllGroups = allGroups.filter { group ->
         (selectedCategory == "All" || group.category == selectedCategory) &&
-        (searchQuery.isBlank() || group.name.contains(searchQuery, ignoreCase = true))
+                (searchQuery.isBlank() || group.name.contains(searchQuery, ignoreCase = true))
+    }
+
+    val filteredUserGroups = userGroups.filter { group ->
+        searchQuery.isBlank() || group.name.contains(searchQuery, ignoreCase = true)
     }
 
     Scaffold(
@@ -85,11 +89,6 @@ fun GroupsHubContent(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
-                actions = {
-                    IconButton(onClick = { showCreateGroupDialog = true }) {
-                        Icon(Icons.Default.Add, "Create Group")
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = StudySurface)
             )
         },
@@ -98,7 +97,7 @@ fun GroupsHubContent(
                 onClick = { showCreateGroupDialog = true },
                 containerColor = StudyPrimary,
                 contentColor = Color.White,
-                icon = { Icon(Icons.Default.Add, "Create group") },
+                icon = { Icon(Icons.Default.GroupAdd, "Create group") },
                 text = { Text("Create Group") },
                 shape = RoundedCornerShape(16.dp)
             )
@@ -123,6 +122,13 @@ fun GroupsHubContent(
                     onValueChange = { searchQuery = it },
                     placeholder = { Text("Search for groups...", color = StudyTextSecondary) },
                     leadingIcon = { Icon(Icons.Default.Search, null, tint = StudyTextSecondary) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, null, tint = StudyTextSecondary)
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -160,11 +166,11 @@ fun GroupsHubContent(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (userGroups.isNotEmpty()) {
+                if (filteredUserGroups.isNotEmpty()) {
                     item {
-                        SectionHeader(title = "Your Active Groups")
+                        SectionHeader(title = if (searchQuery.isEmpty()) "Your Active Groups" else "Search in Your Groups")
                     }
-                    items(userGroups) { group ->
+                    items(filteredUserGroups) { group ->
                         EnhancedGroupCard(
                             group = group,
                             isActive = true,
@@ -174,16 +180,25 @@ fun GroupsHubContent(
                     }
                 }
 
-                item {
-                    SectionHeader(title = "Discover Groups")
-                }
-                items(filteredGroups.filter { group -> userGroups.none { it.id == group.id } }) { group ->
-                    EnhancedGroupCard(
-                        group = group,
-                        isActive = false,
-                        onCardClick = { onJoinGroup(group.id.toString()) },
-                        onButtonClick = { onJoinGroup(group.id.toString()) }
-                    )
+                val discoverGroups = filteredAllGroups.filter { group -> userGroups.none { it.id == group.id } }
+                if (discoverGroups.isNotEmpty()) {
+                    item {
+                        SectionHeader(title = if (searchQuery.isEmpty()) "Discover Groups" else "Matching Results")
+                    }
+                    items(discoverGroups) { group ->
+                        EnhancedGroupCard(
+                            group = group,
+                            isActive = false,
+                            onCardClick = { onJoinGroup(group.id.toString()) },
+                            onButtonClick = { onJoinGroup(group.id.toString()) }
+                        )
+                    }
+                } else if (searchQuery.isNotEmpty() && filteredUserGroups.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            Text("No groups match your search", color = StudyTextSecondary)
+                        }
+                    }
                 }
 
                 item {

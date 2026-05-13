@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.deepseek.studycircle.R
 import com.deepseek.studycircle.data.UserViewModel
@@ -33,27 +32,56 @@ import com.deepseek.studycircle.models.Resource
 import com.deepseek.studycircle.models.UploadMaterial
 import com.deepseek.studycircle.models.User
 import com.deepseek.studycircle.ui.theme.*
+import kotlinx.coroutines.launch
+import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KnowledgeBankScreen(navController: NavHostController, userViewModel: UserViewModel = viewModel()) {
     val uploadedMaterials = userViewModel.allMaterials
     val user by userViewModel.userData
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    KnowledgeBankContent(
-        uploadedMaterials = uploadedMaterials,
-        user = user,
-        onBackClick = { navController.popBackStack() },
-        onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") }
-    )
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Knowledge Bank", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = StudySurface)
+            )
+        },
+        containerColor = StudyBackground
+    ) { padding ->
+        KnowledgeBankContent(
+            modifier = Modifier.padding(padding),
+            uploadedMaterials = uploadedMaterials,
+            user = user,
+            onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") },
+            onLikeAuthor = { authorId ->
+                userViewModel.likeUser(authorId) { success ->
+                    if (success) {
+                        scope.launch { snackbarHostState.showSnackbar("Liked Author! Reputation increased.") }
+                    }
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KnowledgeBankContent(
+    modifier: Modifier = Modifier,
     uploadedMaterials: List<UploadMaterial>,
     user: User?,
-    onBackClick: () -> Unit,
-    onResourceClick: (String) -> Unit
+    onResourceClick: (String) -> Unit,
+    onLikeAuthor: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All Topics") }
@@ -68,13 +96,14 @@ fun KnowledgeBankContent(
                 id = mat.id,
                 title = mat.title,
                 author = mat.author,
+                authorId = mat.authorId,
                 authorBadge = "Student",
                 tag = "NEW",
                 type = mat.fileType,
-                pages = 1,
-                size = "N/A",
-                downloads = 0,
-                rating = 5.0,
+                pages = mat.pages,
+                size = mat.fileSize,
+                downloads = mat.downloadCount,
+                rating = mat.rating,
                 reviews = 0,
                 category = mat.category,
                 cost = mat.cost,
@@ -94,159 +123,126 @@ fun KnowledgeBankContent(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Knowledge Bank", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Discover and exchange peer-reviewed study materials.",
+                color = StudyTextSecondary,
+                fontSize = 14.sp,
+                lineHeight = 20.sp
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = {
+                    Text("Search subjects, notes...", color = StudyTextSecondary, fontSize = 14.sp)
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null, tint = StudyTextSecondary, modifier = Modifier.size(20.dp))
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = StudyTextSecondary)
+                        }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = StudySurface)
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = StudySurface,
+                    focusedContainerColor = StudySurface,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = StudyPrimary.copy(alpha = 0.5f)
+                ),
+                singleLine = true
             )
-        },
-        containerColor = StudyBackground
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SectionHeader(title = "Categories")
+        
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 20.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(16.dp)
+            items(categories) { cat ->
+                CategoryChip(
+                    text = cat,
+                    isSelected = selectedCategory == cat,
+                    onClick = { selectedCategory = cat }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        if (filteredResources.isEmpty()) {
+            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                Text("No resources found", color = StudyTextSecondary)
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Discover and exchange peer-reviewed study materials.",
-                    color = StudyTextSecondary,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            "Search subjects, notes...",
-                            color = StudyTextSecondary,
-                            fontSize = 14.sp
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            tint = StudyTextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Clear",
-                                    tint = StudyTextSecondary
-                                )
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = StudySurface,
-                        focusedContainerColor = StudySurface,
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedBorderColor = StudyPrimary.copy(alpha = 0.5f)
-                    ),
-                    singleLine = true
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = null, tint = StudyAccentOrangeText, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (searchQuery.isEmpty()) "Trending Resources" else "Search Results",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = StudyTextPrimary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            SectionHeader(title = "Categories")
-            
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp)
-            ) {
-                items(categories) { cat ->
-                    CategoryChip(
-                        text = cat,
-                        isSelected = selectedCategory == cat,
-                        onClick = { selectedCategory = cat }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            if (filteredResources.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                    Text("No resources found", color = StudyTextSecondary)
-                }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.TrendingUp, 
-                            contentDescription = null, 
-                            tint = StudyAccentOrangeText, 
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (searchQuery.isEmpty()) "Trending Resources" else "Search Results",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = StudyTextPrimary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp)
-                ) {
-                    items(filteredResources) { res ->
-                        ResourceCard(
-                            res = res,
-                            modifier = Modifier.width(260.dp),
-                            onClick = { onResourceClick(res.id.toString()) }
-                        )
-                    }
-                }
-            }
-
-            SectionHeader(title = "Recently Added")
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp)
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp)
             ) {
-                items(mappedResources.sortedByDescending { it.id }.take(10)) { res ->
+                items(filteredResources) { res ->
                     ResourceCard(
                         res = res,
                         modifier = Modifier.width(260.dp),
-                        onClick = { onResourceClick(res.id.toString()) }
+                        onClick = { onResourceClick(res.id.toString()) },
+                        onLikeClick = { onLikeAuthor(res.authorId) }
                     )
+                }
+            }
+            
+            if (searchQuery.isEmpty()) {
+                SectionHeader(title = "Recently Added")
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp)
+                ) {
+                    items(mappedResources.sortedByDescending { it.id }.take(10)) { res ->
+                        ResourceCard(
+                            res = res,
+                            modifier = Modifier.width(260.dp),
+                            onClick = { onResourceClick(res.id.toString()) },
+                            onLikeClick = { onLikeAuthor(res.authorId) }
+                        )
+                    }
                 }
             }
         }
@@ -254,35 +250,9 @@ fun KnowledgeBankContent(
 }
 
 @Composable
-fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        fontSize = 18.sp,
-        fontWeight = FontWeight.Bold,
-        color = StudyTextPrimary,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-    )
-}
+fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Unit = {}, onLikeClick: () -> Unit = {}) {
+    var isLiked by remember { mutableStateOf(false) }
 
-@Composable
-fun CategoryChip(text: String, isSelected: Boolean, onClick: () -> Unit) {
-    Surface(
-        color = if (isSelected) StudyPrimary else StudySurface,
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.clickable { onClick() }
-    ) {
-        Text(
-            text = text,
-            color = if (isSelected) Color.White else StudyTextSecondary,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            fontWeight = FontWeight.Medium,
-            fontSize = 13.sp
-        )
-    }
-}
-
-@Composable
-fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     Card(
         modifier = modifier.clickable { onClick() },
         shape = RoundedCornerShape(20.dp),
@@ -291,10 +261,7 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(130.dp)
-                    .background(Color(0xFFE0E0E0)),
+                modifier = Modifier.fillMaxWidth().height(130.dp).background(Color(0xFFF3F4F6)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -317,6 +284,23 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
+                
+                IconButton(
+                    onClick = {
+                        if (!isLiked) {
+                            onLikeClick()
+                            isLiked = true
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp).background(Color.White.copy(alpha = 0.8f), CircleShape).size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isLiked) Icons.Default.ThumbUpAlt else Icons.Default.ThumbUp,
+                        contentDescription = "Like Author", 
+                        tint = if (isLiked) StudyTeal else StudyPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
 
             Column(modifier = Modifier.padding(16.dp)) {
@@ -329,34 +313,15 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
                             contentScale = ContentScale.Crop
                         )
                     } else {
-                        Image(
-                            painter = painterResource(id = R.drawable.person),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp).clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
+                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(24.dp).clip(CircleShape).background(StudyBackground).padding(4.dp), tint = StudyPrimary)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = res.author, 
-                        color = StudyTextSecondary, 
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(text = res.author, color = StudyTextSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Text(
-                    text = res.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = StudyTextPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    minLines = 2
-                )
+                Text(text = res.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = StudyTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, minLines = 2)
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -366,22 +331,17 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            color = StudyBackground,
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Text(
-                                text = res.type,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = StudyTextSecondary
-                            )
+                        Surface(color = StudyBackground, shape = RoundedCornerShape(6.dp)) {
+                            Text(text = res.type, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = StudyTextSecondary)
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(14.dp), tint = StudyTextSecondary)
+                        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(14.dp), tint = StudyTextSecondary)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(text = "${res.downloads}", color = StudyTextSecondary, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(14.dp), tint = Gold)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(text = String.format(Locale.getDefault(), "%.1f", res.rating), color = StudyTextSecondary, fontSize = 12.sp)
                     }
 
                     Button(
@@ -391,7 +351,7 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier.height(34.dp)
                     ) {
-                        Text("Barter", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("View", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -399,18 +359,18 @@ fun ResourceCard(res: Resource, modifier: Modifier = Modifier, onClick: () -> Un
     }
 }
 
-@Preview(showBackground =  true)
 @Composable
-fun KnowledgeBankContentPreview() {
-    StudycircleTheme {
-        KnowledgeBankContent(
-            uploadedMaterials = listOf(
-                UploadMaterial(id = "1", title = "Organic Chemistry Notes", author = "Alice", category = "Chemistry", cost = 100),
-                UploadMaterial(id = "2", title = "Calculus II Problems", author = "Bob", category = "Mathematics", cost = 150)
-            ),
-            user = User(name = "John Doe"),
-            onBackClick = {},
-            onResourceClick = {}
-        )
+fun SectionHeader(title: String) {
+    Text(text = title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = StudyTextPrimary, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+}
+
+@Composable
+fun CategoryChip(text: String, isSelected: Boolean, onClick: () -> Unit) {
+    Surface(
+        color = if (isSelected) StudyPrimary else StudySurface,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Text(text = text, color = if (isSelected) Color.White else StudyTextSecondary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp), fontWeight = FontWeight.Medium, fontSize = 13.sp)
     }
 }

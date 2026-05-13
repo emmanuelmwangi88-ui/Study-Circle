@@ -302,7 +302,7 @@ fun WhiteboardContent(
 @Composable
 fun AnswerItem(answer: WhiteboardAnswer, isMe: Boolean) {
     val isTutor = answer.userName.contains("Tutor") || answer.userName.contains("Dr.")
-    
+
     Surface(
         color = if (isTutor) StudyPrimary.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.03f),
         shape = RoundedCornerShape(16.dp),

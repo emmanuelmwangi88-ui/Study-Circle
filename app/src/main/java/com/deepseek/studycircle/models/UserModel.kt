@@ -18,14 +18,16 @@ data class User(
     val lastLogin: Long = 0,
     val studyTimeMillis: Long = 0,
     val bookmarks: Map<String, Boolean>? = emptyMap(),
+    val unlockedResources: Map<String, Boolean>? = emptyMap(),
     val joinedGroups: Map<String, Boolean>? = emptyMap(),
-    val badges: List<String>? = emptyList()
+    val badges: List<String>? = emptyList(),
+    val expertise: Map<String, Double>? = emptyMap()
 )
 
 @Keep
 @IgnoreExtraProperties
 data class Review(
-    val id: Any? = null,
+    val id: String = "",
     val userId: String = "",
     val user: String = "",
     val userImage: String = "",
@@ -58,7 +60,11 @@ data class UploadMaterial(
     val authorId: String = "",
     val authorImage: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val cost: Long = 0
+    val cost: Long = 0,
+    val rating: Double = 5.0,
+    val downloadCount: Int = 0,
+    val fileSize: String = "0.0 MB",
+    val pages: Int = 1
 )
 
 @Keep
@@ -68,5 +74,8 @@ data class WhiteboardAnswer(
     val userName: String = "",
     val userId: String = "",
     val text: String = "",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val upvotes: Int = 0,
+    val downvotes: Int = 0,
+    val voters: Map<String, Int>? = emptyMap() // userId -> (1 for up, -1 for down)
 )

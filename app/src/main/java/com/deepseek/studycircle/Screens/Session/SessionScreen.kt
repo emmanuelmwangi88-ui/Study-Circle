@@ -9,10 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.VideoCall
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -62,6 +59,17 @@ fun SessionContent(
     onDeleteSession: (String) -> Unit,
     onJoinSession: (String) -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredSessions = remember(searchQuery, allCombinedSessions) {
+        allCombinedSessions.filter { session ->
+            searchQuery.isBlank() || 
+            session.title.contains(searchQuery, ignoreCase = true) || 
+            session.student.contains(searchQuery, ignoreCase = true) ||
+            session.topic.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -84,60 +92,94 @@ fun SessionContent(
             }
         }
     ) { padding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(StudyBackground),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .background(StudyBackground)
         ) {
-            val liveSessions = allCombinedSessions.filter { it.isLive }
-            val scheduledSessions = allCombinedSessions.filter { !it.isLive }
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = {
+                    Text("Search sessions, hosts, topics...", color = StudyTextSecondary, fontSize = 14.sp)
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = null, tint = StudyTextSecondary, modifier = Modifier.size(20.dp))
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = StudyTextSecondary)
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = StudySurface,
+                    focusedContainerColor = StudySurface,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = StudyPrimary.copy(alpha = 0.5f)
+                ),
+                singleLine = true
+            )
 
-            if (liveSessions.isNotEmpty()) {
-                item {
-                    Text(
-                        "Ongoing Study Sessions",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = StudyTextPrimary
-                    )
-                }
-                items(liveSessions) { session ->
-                    LiveVideoCard(
-                        session = session,
-                        onJoin = { onJoinSession(session.id) },
-                        isOwner = session.creatorId == currentUserId,
-                        onDelete = { onDeleteSession(session.id) }
-                    )
-                }
-            }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                val liveSessions = filteredSessions.filter { it.isLive }
+                val scheduledSessions = filteredSessions.filter { !it.isLive }
 
-            if (scheduledSessions.isNotEmpty()) {
-                item {
-                    Text(
-                        "Scheduled",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = StudyTextPrimary,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
+                if (liveSessions.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = if (searchQuery.isEmpty()) "Ongoing Study Sessions" else "Matching Live Sessions",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = StudyTextPrimary
+                        )
+                    }
+                    items(liveSessions) { session ->
+                        LiveVideoCard(
+                            session = session,
+                            onJoin = { onJoinSession(session.id) },
+                            isOwner = session.creatorId == currentUserId,
+                            onDelete = { onDeleteSession(session.id) }
+                        )
+                    }
                 }
-                items(scheduledSessions) { session ->
-                    SessionCard(
-                        session = session,
-                        isOwner = session.creatorId == currentUserId,
-                        onDelete = { onDeleteSession(session.id) },
-                        onJoin = { onJoinSession(session.id) }
-                    )
-                }
-            }
 
-            if (scheduledSessions.isEmpty() && liveSessions.isEmpty()) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        Text(text = "No sessions found", color = StudyTextSecondary)
+                if (scheduledSessions.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = if (searchQuery.isEmpty()) "Scheduled" else "Matching Scheduled Sessions",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StudyTextPrimary,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                    items(scheduledSessions) { session ->
+                        SessionCard(
+                            session = session,
+                            isOwner = session.creatorId == currentUserId,
+                            onDelete = { onDeleteSession(session.id) },
+                            onJoin = { onJoinSession(session.id) }
+                        )
+                    }
+                }
+
+                if (filteredSessions.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            Text(text = "No sessions found", color = StudyTextSecondary)
+                        }
                     }
                 }
             }

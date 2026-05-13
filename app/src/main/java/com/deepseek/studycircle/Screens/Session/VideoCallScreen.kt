@@ -119,7 +119,7 @@ fun VideoCallScreen(
             options.publishCameraTrack = true
             options.publishMicrophoneTrack = true
             
-            val token = if (BuildConfig.AGORA_TOKEN == "YOUR_AGORA_TOKEN" || BuildConfig.AGORA_TOKEN == "null") null else BuildConfig.AGORA_TOKEN
+            val token = if (BuildConfig.AGORA_TOKEN == "007eJxTYFDXYI2pe+F6KfqgcuBS4fXVaSVPJBq5Hi3vnpoXtnlry0MFBjMjC4OUtGTDNJMkI5MkE5OkREszY0MzU6NkSwsDM8u0OFHmrIZARoYgoY9MjAyMDCxADOIzgUlmMMkCJlkZiktKUyoZGAAgAiCA" || BuildConfig.AGORA_TOKEN == "null") null else BuildConfig.AGORA_TOKEN
             engine.joinChannel(token, sessionId, 0, options)
             
             rtcEngine = engine
@@ -249,13 +249,6 @@ fun VideoCallScreen(
                     modifier = Modifier.size(48.dp).background(if (isVideoOff) Color.Red else Color.White.copy(alpha = 0.2f), CircleShape)
                 ) {
                     Icon(if (isVideoOff) Icons.Default.VideocamOff else Icons.Default.Videocam, null, tint = Color.White)
-                }
-
-                IconButton(
-                    onClick = { navController.navigate(ROUTE_WHITEBOARD) },
-                    modifier = Modifier.size(48.dp).background(Color.White.copy(alpha = 0.2f), CircleShape)
-                ) {
-                    Icon(Icons.Default.Gesture, "Whiteboard", tint = Color.White)
                 }
 
                 IconButton(

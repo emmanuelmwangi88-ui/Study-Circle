@@ -101,7 +101,7 @@ fun GroupChatContent(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Column {
                         Text(group?.name ?: "Group Chat", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         Text("${group?.members?.size ?: 0} members", fontSize = 12.sp, color = StudyTextSecondary)
@@ -114,7 +114,7 @@ fun GroupChatContent(
                 },
                 actions = {
                     IconButton(onClick = onVideoCallClick) {
-                        Icon(Icons.Default.VideoCall, "Group Call", tint = StudyPrimary)
+                        Icon(Icons.Default.VideoCall, "Group Call", tint = RedAccent)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = StudySurface)
@@ -126,9 +126,12 @@ fun GroupChatContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .background(StudyAccentOrange)
+
         ) {
             LazyColumn(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f),
                 contentPadding = PaddingValues(16.dp),
                 reverseLayout = true
             ) {
@@ -182,7 +185,7 @@ fun GroupChatContent(
                     ) {
                         Icon(
                             Icons.Default.Send,
-                            "Send", 
+                            "Send",
                             tint = if (messageText.isNotBlank()) StudyPrimary else Color.Gray
                         )
                     }
@@ -234,12 +237,12 @@ fun ChatMessageItem(message: ChatMessage, currentUserUid: String?) {
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                     }
-                    
+
                     if (message.fileUrl != null) {
                         FileAttachmentPreview(message.fileUrl, message.fileType ?: "FILE")
                         Spacer(modifier = Modifier.height(4.dp))
                     }
-                    
+
                     if (message.text != "Sent a file" || message.fileUrl == null) {
                         Text(
                             text = message.text,
@@ -267,7 +270,7 @@ fun ChatMessageItem(message: ChatMessage, currentUserUid: String?) {
 @Composable
 fun FileAttachmentPreview(url: String, type: String) {
     val isImage = type.uppercase() in listOf("JPG", "JPEG", "PNG", "WEBP")
-    
+
     if (isImage) {
         AsyncImage(
             model = url,

@@ -70,7 +70,7 @@ fun AboutScreen(navController: NavHostController) {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Developed by Emmanuel Mwangi.",
+                text = "Developed by Emmanuel and inspired by Elsie.",
                 fontSize = 16.sp,
                 modifier = Modifier.padding(top = 8.dp)
             )

@@ -11,6 +11,9 @@ import com.deepseek.studycircle.navigation.AppNavHost
 import com.deepseek.studycircle.ui.theme.*
 import com.google.firebase.FirebaseApp
 
+const val APP_ID="0e9a274cf6c0479bba7314fd8d6488be"
+
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

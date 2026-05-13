@@ -50,7 +50,7 @@ fun ResourceDetailScreen(
 ) {
     val user by userViewModel.userData
     val reviews = userViewModel.resourceReviews
-    
+
     ResourceDetailContent(
         resource = resource,
         user = user,
@@ -60,10 +60,13 @@ fun ResourceDetailScreen(
         onPerformTransaction = { type, amount, desc, onComplete -> 
             userViewModel.performTransaction(type, amount, desc, onComplete) 
         },
+        onUnlockResource = { id -> userViewModel.unlockResource(id) {} },
+        onIncrementDownload = { id -> userViewModel.incrementDownloadCount(id) },
         onSubmitReview = { rating, text, onComplete ->
             userViewModel.submitReview(resource.id, rating, text, onComplete)
         },
-        onFetchReviews = { userViewModel.fetchReviews(resource.id) }
+        onFetchReviews = { userViewModel.fetchReviews(resource.id) },
+        onLikeAuthor = { userViewModel.likeUser(resource.authorId) }
     )
 }
 
@@ -76,21 +79,26 @@ fun ResourceDetailContent(
     onBackClick: () -> Unit,
     onToggleBookmark: (String, Boolean) -> Unit,
     onPerformTransaction: (CreditCalculator.TransactionType, Long?, String, (Boolean) -> Unit) -> Unit,
+    onUnlockResource: (String) -> Unit,
+    onIncrementDownload: (String) -> Unit,
     onSubmitReview: (Float, String, (Boolean) -> Unit) -> Unit,
-    onFetchReviews: () -> Unit
+    onFetchReviews: () -> Unit,
+    onLikeAuthor: () -> Unit
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     
-    val isBookmarked = user?.bookmarks?.get(resource.id.toString()) == true
+    val isBookmarked = user?.bookmarks?.get(resource.id) == true
+    val isUnlocked = user?.unlockedResources?.get(resource.id) == true || 
+                     user?.uid == resource.authorId || 
+                     resource.cost == 0L
     
     var showReviewDialog by remember { mutableStateOf(false) }
     var userRating by remember { mutableStateOf(5f) }
     var reviewText by remember { mutableStateOf("") }
     var isSubmittingReview by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
-    var isUnlocked by remember { mutableStateOf(false) }
 
     LaunchedEffect(resource.id) {
         onFetchReviews()
@@ -111,6 +119,7 @@ fun ResourceDetailContent(
             try {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(resource.fileUrl))
                 context.startActivity(intent)
+                onIncrementDownload(resource.id)
             } catch (e: Exception) {
                 scope.launch { snackbarHostState.showSnackbar("Could not open file URL") }
             }
@@ -121,6 +130,7 @@ fun ResourceDetailContent(
                 delay(2000)
                 isDownloading = false
                 snackbarHostState.showSnackbar("Download complete!")
+                onIncrementDownload(resource.id)
             }
         }
     }
@@ -189,8 +199,15 @@ fun ResourceDetailContent(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(imageVector = Icons.Default.Stars, contentDescription = null, tint = StudyAccentOrangeText, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text(CreditCalculator.formatCredits(resource.cost), fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = StudyTextPrimary)
-                                Text(" credits", fontSize = 14.sp, color = StudyTextSecondary)
+                                Text(
+                                    text = if (resource.cost == 0L) "Free" else CreditCalculator.formatCredits(resource.cost), 
+                                    fontSize = 24.sp, 
+                                    fontWeight = FontWeight.ExtraBold, 
+                                    color = StudyTextPrimary
+                                )
+                                if (resource.cost > 0) {
+                                    Text(" credits", fontSize = 14.sp, color = StudyTextSecondary)
+                                }
                             }
                         }
                         Button(
@@ -202,7 +219,7 @@ fun ResourceDetailContent(
                                         "Unlocked: ${resource.title}"
                                     ) { success ->
                                         if (success) {
-                                            isUnlocked = true
+                                            onUnlockResource(resource.id)
                                             scope.launch { snackbarHostState.showSnackbar("Resource unlocked!") }
                                         } else {
                                             scope.launch { snackbarHostState.showSnackbar("Not enough credits!") }
@@ -223,7 +240,7 @@ fun ResourceDetailContent(
                                 CircularProgressIndicator(Modifier.size(24.dp), color = Color.White)
                             } else {
                                 Icon(
-                                    imageVector = if (isUnlocked) Icons.Default.LockOpen else Icons.Default.LockOpen,
+                                    imageVector = if (isUnlocked) Icons.Default.FileDownload else Icons.Default.Lock,
                                     contentDescription = null
                                 )
                                 Spacer(Modifier.width(8.dp))
@@ -256,7 +273,7 @@ fun ResourceDetailContent(
                     }
                     Spacer(Modifier.width(8.dp))
                     IconButton(
-                        onClick = { onToggleBookmark(resource.id.toString(), !isBookmarked) },
+                        onClick = { onToggleBookmark(resource.id, !isBookmarked) },
                         modifier = Modifier.background(Color.Black.copy(alpha = 0.3f), CircleShape)
                     ) {
                         Icon(
@@ -298,6 +315,9 @@ fun ResourceDetailContent(
                     Column(Modifier.weight(1f)) {
                         Text(text = resource.author, fontWeight = FontWeight.Bold, color = StudyTextPrimary)
                         Text(text = "${resource.authorBadge} Contributor", color = StudyTextSecondary, fontSize = 12.sp)
+                    }
+                    IconButton(onClick = onLikeAuthor) {
+                        Icon(Icons.Default.ThumbUp, contentDescription = "Like Author", tint = StudyPrimary)
                     }
                 }
 
@@ -413,6 +433,7 @@ fun ResourceDetailContentPreview() {
                 id = "1",
                 title = "Machine Learning Basics",
                 author = "Dr. Alice",
+                authorId = "alice123",
                 authorBadge = "Expert",
                 tag = "Best Seller",
                 type = "PDF",
@@ -434,8 +455,11 @@ fun ResourceDetailContentPreview() {
             onBackClick = {},
             onToggleBookmark = { _, _ -> },
             onPerformTransaction = { _, _, _, _ -> },
+            onUnlockResource = {},
+            onIncrementDownload = {},
             onSubmitReview = { _, _, _ -> },
-            onFetchReviews = {}
+            onFetchReviews = {},
+            onLikeAuthor = {}
         )
     }
 }

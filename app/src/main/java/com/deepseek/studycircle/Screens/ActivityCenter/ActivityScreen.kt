@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,11 +27,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.deepseek.studycircle.data.CreditCalculator
 import com.deepseek.studycircle.data.UserViewModel
-import com.deepseek.studycircle.models.CreditTransaction
-import com.deepseek.studycircle.models.Resource
-import com.deepseek.studycircle.models.UploadMaterial
-import com.deepseek.studycircle.models.User
+import com.deepseek.studycircle.models.*
 import com.deepseek.studycircle.ui.theme.*
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -40,13 +39,23 @@ fun ActivityCenterScreen(navController: NavHostController, userViewModel: UserVi
     val user by userViewModel.userData
     val transactions = userViewModel.userTransactions
     val materials = userViewModel.allMaterials
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     ActivityCenterContent(
         user = user,
         transactions = transactions,
         materials = materials,
+        snackbarHostState = snackbarHostState,
         onBackClick = { navController.popBackStack() },
-        onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") }
+        onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") },
+        onClearTransactions = {
+            userViewModel.clearTransactions { success ->
+                if (success) {
+                    scope.launch { snackbarHostState.showSnackbar("Transaction history cleared") }
+                }
+            }
+        }
     )
 }
 
@@ -56,13 +65,16 @@ fun ActivityCenterContent(
     user: User?,
     transactions: List<CreditTransaction>,
     materials: List<UploadMaterial>,
+    snackbarHostState: SnackbarHostState,
     onBackClick: () -> Unit,
-    onResourceClick: (String) -> Unit
+    onResourceClick: (String) -> Unit,
+    onClearTransactions: () -> Unit
 ) {
     val creditsValue = user?.credits ?: 0L
     val rank = CreditCalculator.getRank(creditsValue)
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Activity Center", fontWeight = FontWeight.Bold) },
@@ -115,14 +127,68 @@ fun ActivityCenterContent(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Notifications Section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Notifications",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = StudyTextPrimary
+                )
+                if (notificationsList.isNotEmpty()) {
+                    TextButton(onClick = { notificationsList.clear() }) {
+                        Text("Clear All", color = StudyAccentOrangeText, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (notificationsList.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = StudySurface)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No new notifications", color = StudyTextSecondary, fontSize = 14.sp)
+                    }
+                }
+            } else {
+                notificationsList.forEach { notification ->
+                    NotificationItem(notification)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // Dynamic Transaction History
-            Text(
-                text = "Transaction History",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = StudyTextPrimary,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Transaction History",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = StudyTextPrimary,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                if (transactions.isNotEmpty()) {
+                    TextButton(onClick = onClearTransactions) {
+                        Text("Clear History", color = StudyAccentOrangeText, fontSize = 12.sp)
+                    }
+                }
+            }
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -138,7 +204,7 @@ fun ActivityCenterContent(
                             color = StudyTextSecondary
                         )
                     } else {
-                        val displayTransactions = transactions.take(5)
+                        val displayTransactions = transactions.take(10)
                         for ((index, transaction) in displayTransactions.withIndex()) {
                             TransactionItem(
                                 title = transaction.description,
@@ -252,13 +318,64 @@ fun TransactionItem(title: String, amount: String, time: String, isExpense: Bool
 }
 
 @Composable
+fun NotificationItem(notification: Notification) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = StudySurface)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = StudyPrimary.copy(alpha = 0.1f),
+                shape = CircleShape,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = notification.icon,
+                        contentDescription = null,
+                        tint = StudyPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    notification.title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = StudyTextPrimary
+                )
+                Text(
+                    notification.description,
+                    fontSize = 12.sp,
+                    color = StudyTextSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                notification.time,
+                fontSize = 10.sp,
+                color = StudyTextSecondary,
+                modifier = Modifier.align(Alignment.Top)
+            )
+        }
+    }
+}
+
+@Composable
 fun BookmarkedResourcesSection(
     user: User?,
     materials: List<UploadMaterial>,
     onResourceClick: (String) -> Unit
 ) {
     val bookmarks = user?.bookmarks ?: emptyMap()
-    
+
     val bookmarkedResources = remember(bookmarks, materials) {
         materials.filter { bookmarks[it.id] == true }.map { mat ->
             Resource(
@@ -473,8 +590,10 @@ fun ActivityCenterContentPreview() {
                 CreditTransaction(description = "Download Cost", amount = -10, timestamp = System.currentTimeMillis() - 3600000)
             ),
             materials = emptyList(),
+            snackbarHostState = SnackbarHostState(),
             onBackClick = {},
-            onResourceClick = {}
+            onResourceClick = {},
+            onClearTransactions = {}
         )
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -24,12 +26,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import coil.compose.AsyncImage
 import com.deepseek.studycircle.data.CreditCalculator
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.Resource
 import com.deepseek.studycircle.models.User
 import com.deepseek.studycircle.navigation.*
 import com.deepseek.studycircle.ui.theme.*
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 @Composable
 fun DashboardScreen(
@@ -40,10 +45,13 @@ fun DashboardScreen(
 ) {
     val user by userViewModel.userData
     val materials = userViewModel.allMaterials
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     
     DashboardContent(
         user = user,
         materials = materials,
+        snackbarHostState = snackbarHostState,
         onNotificationClick = onNotificationClick,
         onProfileClick = onProfileClick,
         onCreditsClick = { navController.navigate(ROUTE_CREDITS) },
@@ -54,7 +62,14 @@ fun DashboardScreen(
         onSessionClick = { navController.navigate(ROUTE_SESSION) },
         onWhiteboardClick = { navController.navigate(ROUTE_WHITEBOARD) },
         onUploadClick = { navController.navigate(ROUTE_UPLOAD) },
-        onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") }
+        onResourceClick = { resourceId -> navController.navigate("resource/$resourceId") },
+        onLikeAuthor = { authorId -> 
+            userViewModel.likeUser(authorId) { success ->
+                if (success) {
+                    scope.launch { snackbarHostState.showSnackbar("Liked Author! Reputation increased.") }
+                }
+            }
+        }
     )
 }
 
@@ -63,6 +78,7 @@ fun DashboardScreen(
 fun DashboardContent(
     user: User?,
     materials: List<com.deepseek.studycircle.models.UploadMaterial>,
+    snackbarHostState: SnackbarHostState,
     onNotificationClick: () -> Unit,
     onProfileClick: () -> Unit,
     onCreditsClick: () -> Unit,
@@ -73,7 +89,8 @@ fun DashboardContent(
     onSessionClick: () -> Unit,
     onWhiteboardClick: () -> Unit,
     onUploadClick: () -> Unit,
-    onResourceClick: (String) -> Unit
+    onResourceClick: (String) -> Unit,
+    onLikeAuthor: (String) -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val creditsValue = user?.credits ?: 0L
@@ -89,13 +106,14 @@ fun DashboardContent(
                 id = mat.id,
                 title = mat.title,
                 author = mat.author,
+                authorId = mat.authorId,
                 authorBadge = "Student",
                 tag = "NEW",
                 type = mat.fileType,
-                pages = 1,
-                size = "N/A",
-                downloads = 0,
-                rating = 5.0,
+                pages = mat.pages,
+                size = mat.fileSize,
+                downloads = mat.downloadCount,
+                rating = mat.rating,
                 reviews = 0,
                 category = mat.category,
                 cost = mat.cost,
@@ -107,6 +125,7 @@ fun DashboardContent(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -145,8 +164,31 @@ fun DashboardContent(
                     IconButton(onClick = onNotificationClick) {
                         Icon(Icons.Filled.Notifications, contentDescription = "Activity")
                     }
-                    IconButton(onClick = onProfileClick) {
-                        Icon(Icons.Filled.AccountCircle, contentDescription = "Profile")
+                    
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 12.dp)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(StudyPrimary.copy(alpha = 0.1f))
+                            .clickable { onProfileClick() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!user?.imageUri.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = user?.imageUri,
+                                contentDescription = "Profile Image",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profile",
+                                modifier = Modifier.size(24.dp),
+                                tint = StudyPrimary
+                            )
+                        }
                     }
                 }
             )
@@ -172,7 +214,8 @@ fun DashboardContent(
                     }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Timer, contentDescription = "Timer") },
+                    icon = { Icon(Icons.Filled.Timer, contentDescription = "Timer",
+                        tint = Color.Red) },
                     label = { Text("Timer") },
                     selected = selectedTab == 2,
                     onClick = {
@@ -317,9 +360,11 @@ fun DashboardContent(
                 }
             } else {
                 items(recentResources) { resource ->
-                    ResourceItem(resource) {
-                        onResourceClick(resource.id.toString())
-                    }
+                    ResourceItem(
+                        resource = resource,
+                        onClick = { onResourceClick(resource.id.toString()) },
+                        onLikeClick = { onLikeAuthor(resource.authorId) }
+                    )
                 }
             }
         }
@@ -376,7 +421,9 @@ fun Homecard(
 }
 
 @Composable
-fun ResourceItem(resource: Resource, onClick: () -> Unit) {
+fun ResourceItem(resource: Resource, onClick: () -> Unit, onLikeClick: () -> Unit = {}) {
+    var isLiked by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -418,9 +465,26 @@ fun ResourceItem(resource: Resource, onClick: () -> Unit) {
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = {
+                        if (!isLiked) {
+                            onLikeClick()
+                            isLiked = true
+                        }
+                    }, 
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isLiked) Icons.Default.ThumbUpAlt else Icons.Default.ThumbUp,
+                        contentDescription = "Like Author",
+                        tint = if (isLiked) StudyTeal else StudyPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
                 Icon(Icons.Default.Star, contentDescription = null, tint = Gold, modifier = Modifier.size(16.dp))
                 Text(
-                    resource.rating.toString(),
+                    String.format(Locale.getDefault(), "%.1f", resource.rating),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 4.dp)
@@ -437,6 +501,7 @@ fun DashboardContentPreview() {
         DashboardContent(
             user = User(name = "John Doe", credits = 1500, studyTimeMillis = 3600000),
             materials = emptyList(),
+            snackbarHostState = SnackbarHostState(),
             onNotificationClick = {},
             onProfileClick = {},
             onCreditsClick = {},
@@ -447,7 +512,8 @@ fun DashboardContentPreview() {
             onSessionClick = {},
             onWhiteboardClick = {},
             onUploadClick = {},
-            onResourceClick = {}
+            onResourceClick = {},
+            onLikeAuthor = {}
         )
     }
 }

@@ -104,6 +104,7 @@ dependencies {
     // Import the Firebase BoM
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+    implementation(libs.firebase.messaging)
 
     // navigation
     implementation(libs.androidx.navigation.compose)
