@@ -85,13 +85,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
-    implementation(libs.firebase.auth)
-    implementation(libs.firebase.database)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
-    implementation(libs.firebase.firestore)
-    implementation(libs.firebase.ai)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -104,7 +100,11 @@ dependencies {
     // Import the Firebase BoM
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.database)
+    implementation(libs.firebase.firestore)
     implementation(libs.firebase.messaging)
+    implementation(libs.firebase.ai)
 
     // navigation
     implementation(libs.androidx.navigation.compose)
@@ -121,6 +121,6 @@ dependencies {
     implementation(libs.androidx.multidex)
     
     // Agora SDKs
-    implementation("io.agora.rtc:full-sdk:4.6.3")
-    implementation("io.agora.rtc:chat-sdk:1.3.2")
+    implementation("io.agora.rtc:full-sdk:4.2.6")
+    implementation("io.agora.rtc:chat-sdk:1.2.0")
 }

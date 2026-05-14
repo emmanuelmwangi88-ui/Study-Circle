@@ -25,7 +25,7 @@ import com.deepseek.studycircle.models.Resource
 import com.deepseek.studycircle.Screens.ActivityCenter.ActivityCenterScreen
 import com.deepseek.studycircle.Screens.credits.CreditCalculatorScreen
 import com.deepseek.studycircle.Screens.GroupHub.GroupChatScreen
-import com.deepseek.studycircle.Screens.GroupHub.GroupsHubScreen
+import com.deepseek.studycircle.screens.GroupHub.GroupsHubScreen
 import com.deepseek.studycircle.Screens.Knowledgebank.KnowledgeBankScreen
 import com.deepseek.studycircle.Screens.Register.RegisterScreen
 import com.deepseek.studycircle.Screens.ResourceDetails.ResourceDetailScreen

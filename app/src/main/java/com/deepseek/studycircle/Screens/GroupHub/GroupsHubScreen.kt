@@ -1,4 +1,4 @@
-package com.deepseek.studycircle.Screens.GroupHub
+package com.deepseek.studycircle.screens.GroupHub
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.rememberNavController
 import com.deepseek.studycircle.data.UserViewModel
 import com.deepseek.studycircle.models.StudyGroup
 import com.deepseek.studycircle.navigation.ROUTE_GROUP_CHAT
@@ -41,10 +39,10 @@ fun GroupsHubScreen(navController: NavHostController, userViewModel: UserViewMod
         userGroups = userGroups,
         onBackClick = { navController.popBackStack() },
         onCreateGroup = { name, description, category ->
-            userViewModel.createStudyGroup(name, description, category)
+            userViewModel.createStudyGroup(name, description, category) { /* Handle completion */ }
         },
         onJoinGroup = { groupId ->
-            userViewModel.joinStudyGroup(groupId)
+            userViewModel.joinStudyGroup(groupId) { /* Handle completion */ }
         },
         onGroupClick = { groupId ->
             navController.navigate("$ROUTE_GROUP_CHAT/$groupId")
@@ -77,7 +75,8 @@ fun GroupsHubContent(
     }
 
     val filteredUserGroups = userGroups.filter { group ->
-        searchQuery.isBlank() || group.name.contains(searchQuery, ignoreCase = true)
+        (selectedCategory == "All" || group.category == selectedCategory) &&
+                (searchQuery.isBlank() || group.name.contains(searchQuery, ignoreCase = true))
     }
 
     Scaffold(

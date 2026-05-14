@@ -77,8 +77,6 @@ class UserViewModel : ViewModel() {
     private val _groupMessages = mutableStateMapOf<String, List<ChatMessage>>()
     val groupMessages: Map<String, List<ChatMessage>> = _groupMessages
 
-    private val chatListeners = mutableMapOf<String, Pair<DatabaseReference, ValueEventListener>>()
-
     private var sessionStartTime: Long = System.currentTimeMillis()
     private var lastUid: String? = null
     private var sessionCheckId: String? = null
@@ -170,7 +168,7 @@ class UserViewModel : ViewModel() {
                     val user = snapshot.getValue(User::class.java)
                     _userData.value = user
                     if (user != null) {
-                        checkAndAwardBonuses(uid, user)
+                        // checkAndAwardBonuses(uid, user)
                         updateUserStudyGroups(user.joinedGroups)
                     }
                 } catch (e: Exception) {
@@ -302,34 +300,16 @@ class UserViewModel : ViewModel() {
         _userStudyGroups.value = _allStudyGroups.value.filter { it.id.toString() in joinedGroupIds }
         
         joinedGroupIds.forEach { groupId ->
-            if (!chatListeners.containsKey(groupId)) {
-                startChatListener(groupId)
-                // Subscribe to FCM topic for this group
-                FirebaseMessaging.getInstance().subscribeToTopic("group_$groupId")
-            }
+            startChatListener(groupId)
+            // Subscribe to FCM topic for this group
+            FirebaseMessaging.getInstance().subscribeToTopic("group_$groupId")
         }
     }
 
     private fun startChatListener(groupId: String) {
-        // We load local history from Agora
         val conversation = ChatClient.getInstance().chatManager().getConversation(groupId, AgoraConversation.ConversationType.GroupChat, true)
         val agoraMessages = conversation.allMessages
         _groupMessages[groupId] = agoraMessages.map { mapAgoraMessageToChatMessage(it) }.sortedBy { it.timestamp }
-
-        // Also keep Firebase listener as backup or for specific metadata
-        val chatRef = database.child("group_chats").child(groupId)
-        val listener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val fbMessages = snapshot.children.mapNotNull { data ->
-                    try { data.getValue(ChatMessage::class.java) } catch (_: Exception) { null }
-                }
-                val currentAgora = _groupMessages[groupId] ?: emptyList()
-                _groupMessages[groupId] = (currentAgora + fbMessages).distinctBy { it.id }.sortedBy { it.timestamp }
-            }
-            override fun onCancelled(error: DatabaseError) {}
-        }
-        chatRef.addValueEventListener(listener)
-        chatListeners[groupId] = chatRef to listener
     }
 
     private fun mapAgoraMessageToChatMessage(msg: AgoraMessage): ChatMessage {
@@ -347,60 +327,52 @@ class UserViewModel : ViewModel() {
     }
 
     private fun checkAndAwardBonuses(uid: String, user: User) {
-        if (lastCheckedBonusSession == sessionCheckId) return
-        lastCheckedBonusSession = sessionCheckId
+        val userRef = database.child("users").child(uid)
 
-        val currentTime = System.currentTimeMillis()
-        var bonusAmount: Long
-        var bonusType: CreditCalculator.TransactionType
-
+        // Award sign-up bonus if it's the first login
         if (user.isFirstLogin) {
-            database.child("transactions")
-                .orderByChild("userId")
-                .equalTo(uid)
-                .addListenerForSingleValueEvent(object : ValueEventListener {
-                    override fun onDataChange(snapshot: DataSnapshot) {
-                        val hasReceivedSignupBonus = snapshot.children.any {
-                            it.getValue(CreditTransaction::class.java)?.type == CreditCalculator.TransactionType.SIGNUP_BONUS.name
-                        }
-
-                        if (!hasReceivedSignupBonus) {
-                            bonusAmount = CreditCalculator.WELCOME_BONUS
-                            bonusType = CreditCalculator.TransactionType.SIGNUP_BONUS
-                            
-                            val updates = mutableMapOf<String, Any>(
-                                "credits" to ServerValue.increment(bonusAmount),
-                                "isFirstLogin" to false,
-                                "lastLogin" to currentTime
-                            )
-                            
-                            // Award Welcome Badge
-                            val currentBadges = user.badges?.toMutableList() ?: mutableListOf()
-                            if (!currentBadges.contains("learner")) {
-                                currentBadges.add("learner")
-                                updates["badges"] = currentBadges
-                            }
-
-                            database.child("users").child(uid).updateChildren(updates).addOnSuccessListener {
-                                recordTransaction(uid, bonusAmount, bonusType)
-                            }
-                        }
+            userRef.runTransaction(object : Transaction.Handler {
+                override fun doTransaction(currentData: MutableData): Transaction.Result {
+                    val u = currentData.getValue(User::class.java)
+                    if (u == null || !u.isFirstLogin) {
+                        return Transaction.abort() // Another client handled it or user isn't new
                     }
 
-                    override fun onCancelled(error: DatabaseError) {}
-                })
+                    // It's confirmed a first login, apply bonus
+                    val newCredits = u.credits + CreditCalculator.WELCOME_BONUS
+                    val newBadges = u.badges?.toMutableList() ?: mutableListOf()
+                    if (!newBadges.contains("learner")) {
+                        newBadges.add("learner")
+                    }
+
+                    currentData.child("credits").value = newCredits
+                    currentData.child("isFirstLogin").value = false
+                    currentData.child("lastLogin").value = System.currentTimeMillis()
+                    currentData.child("badges").value = newBadges
+
+                    return Transaction.success(currentData)
+                }
+
+                override fun onComplete(
+                    error: DatabaseError?,
+                    committed: Boolean,
+                    currentData: DataSnapshot?
+                ) {
+                    if (error == null && committed) {
+                        recordTransaction(uid, CreditCalculator.WELCOME_BONUS, CreditCalculator.TransactionType.SIGNUP_BONUS)
+                    }
+                }
+            })
         } else {
+            // Award daily login bonus
             val oneDayMillis = 24 * 60 * 60 * 1000
-            if (user.lastLogin == 0L || currentTime - user.lastLogin > oneDayMillis) {
-                bonusAmount = CreditCalculator.DAILY_LOGIN_BONUS
-                bonusType = CreditCalculator.TransactionType.DAILY_LOGIN
-                
+            if (System.currentTimeMillis() - user.lastLogin > oneDayMillis) {
                 val updates = mapOf(
-                    "credits" to ServerValue.increment(bonusAmount),
-                    "lastLogin" to currentTime
+                    "credits" to ServerValue.increment(CreditCalculator.DAILY_LOGIN_BONUS),
+                    "lastLogin" to System.currentTimeMillis()
                 )
-                database.child("users").child(uid).updateChildren(updates).addOnSuccessListener {
-                    recordTransaction(uid, bonusAmount, bonusType)
+                userRef.updateChildren(updates).addOnSuccessListener {
+                    recordTransaction(uid, CreditCalculator.DAILY_LOGIN_BONUS, CreditCalculator.TransactionType.DAILY_LOGIN)
                 }
             }
         }
@@ -422,9 +394,6 @@ class UserViewModel : ViewModel() {
     private fun clearUserSpecificData() {
         userListener?.let { (ref, listener) -> ref.removeEventListener(listener) }
         transListener?.let { (query, listener) -> query.removeEventListener(listener) }
-        chatListeners.values.forEach { (ref, listener) ->
-            ref.removeEventListener(listener)
-        }
         
         // Unsubscribe from topics when logging out
         _userStudyGroups.value.forEach { group ->
@@ -433,7 +402,6 @@ class UserViewModel : ViewModel() {
 
         userListener = null
         transListener = null
-        chatListeners.clear()
         
         _userData.value = null
         _userTransactions.clear()
@@ -678,20 +646,14 @@ class UserViewModel : ViewModel() {
 
     fun clearTransactions(onComplete: (Boolean) -> Unit) {
         val uid = auth.currentUser?.uid ?: return onComplete(false)
-        database.child("transactions").orderByChild("userId").equalTo(uid).addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val updates = mutableMapOf<String, Any?>()
-                for (child in snapshot.children) {
-                    updates[child.key!!] = null
-                }
-                database.child("transactions").updateChildren(updates).addOnCompleteListener { 
-                    onComplete(it.isSuccessful)
-                }
-            }
-            override fun onCancelled(error: DatabaseError) {
+        database.child("transactions").orderByChild("userId").equalTo(uid)
+            .get().addOnSuccessListener { snapshot ->
+                val updates = snapshot.children.associate { it.key to null }
+                database.child("transactions").updateChildren(updates)
+                    .addOnCompleteListener { task -> onComplete(task.isSuccessful) }
+            }.addOnFailureListener {
                 onComplete(false)
             }
-        })
     }
 
     fun toggleBookmark(resourceId: String, isBookmarked: Boolean, onResult: (Boolean) -> Unit) {
@@ -759,45 +721,67 @@ class UserViewModel : ViewModel() {
         }
     }
 
-    fun createStudyGroup(name: String, description: String, category: String) {
-        val user = _userData.value ?: return
-        val safeUid = user.uid.replace(".", "_")
-        val groupId = database.child("study_groups").push().key ?: return
+    fun createStudyGroup(name: String, description: String, category: String, onComplete: (Boolean) -> Unit) {
+        val user = _userData.value ?: return onComplete(false)
+        val groupId = database.child("study_groups").push().key ?: return onComplete(false)
+
         val group = StudyGroup(
             id = groupId,
             name = name,
             description = description,
             category = category,
             createdBy = user.uid,
-            members = mapOf(safeUid to true)
+            members = mapOf(user.uid to true)
         )
-        database.child("study_groups").child(groupId).setValue(group)
-        joinStudyGroup(groupId)
 
-        // Register group in Agora Chat
-        Thread {
-            try {
-                ChatClient.getInstance().groupManager().createGroup(name, description, arrayOf(user.uid), "Study group", GroupOptions())
-            } catch (_: Exception) {}
-        }.start()
+        database.child("study_groups").child(groupId).setValue(group).addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                joinStudyGroup(groupId) { joinSuccess ->
+                    if (joinSuccess) {
+                        // Optionally, create the Agora group on a background thread
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                val options = GroupOptions()
+                                options.maxUsers = 500 // Example option
+                                // options.style = io.agora.chat.GroupStyle.PrivateMemberCanInvite // Example option
+                                ChatClient.getInstance().groupManager().createGroup(name, description, arrayOf(user.uid), "Study group created via app", options)
+                            } catch (e: Exception) {
+                                Log.e("UserViewModel", "Failed to create Agora group: ${e.message}")
+                                // Decide if you need to handle this failure, e.g., by deleting the Firebase group
+                            }
+                        }
+                    }
+                    onComplete(joinSuccess)
+                }
+            } else {
+                onComplete(false)
+            }
+        }
     }
 
-    fun joinStudyGroup(groupId: String) {
-        val uid = auth.currentUser?.uid ?: return
-        val safeUid = uid.replace(".", "_")
-        database.child("study_groups").child(groupId).child("members").child(safeUid).setValue(true)
-        database.child("users").child(uid).child("joinedGroups").child(groupId).setValue(true)
-        database.child("study_groups").child(groupId).child("members").child(safeUid).setValue(true)
-        database.child("users").child(uid).child("joinedGroups").child(groupId).setValue(true)
+    fun joinStudyGroup(groupId: String, onComplete: (Boolean) -> Unit) {
+        val uid = auth.currentUser?.uid ?: return onComplete(false)
 
-        // Subscribe to FCM topic
-        FirebaseMessaging.getInstance().subscribeToTopic("group_$groupId")
+        val updates = mapOf(
+            "/study_groups/$groupId/members/$uid" to true,
+            "/users/$uid/joinedGroups/$groupId" to true
+        )
 
-        // Join in Agora
-        Thread {
-            try { ChatClient.getInstance().groupManager().joinGroup(groupId) } catch (_: Exception) {}
-        }.start()
+        database.updateChildren(updates).addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                FirebaseMessaging.getInstance().subscribeToTopic("group_$groupId")
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        ChatClient.getInstance().groupManager().joinGroup(groupId)
+                    } catch (e: Exception) {
+                        Log.e("UserViewModel", "Failed to join Agora group: ${e.message}")
+                    }
+                }
+            }
+            onComplete(task.isSuccessful)
+        }
     }
+
 
     fun getGroupById(groupId: String): Flow<StudyGroup?> {
         return allStudyGroups.map { groups ->
@@ -808,7 +792,6 @@ class UserViewModel : ViewModel() {
     fun sendChatMessage(groupId: String, text: String, fileUrl: String? = null, fileType: String? = null) {
         val user = _userData.value ?: return
         
-        // 1. Send via Agora Chat
         @Suppress("DEPRECATION")
         val message = AgoraMessage.createTxtSendMessage(text, groupId)
         message.chatType = AgoraMessage.ChatType.GroupChat
@@ -818,27 +801,9 @@ class UserViewModel : ViewModel() {
         fileType?.let { message.setAttribute("fileType", it) }
         
         ChatClient.getInstance().chatManager().sendMessage(message)
-
-        // 2. Also save to Firebase as backup/history
-        // This triggers the Realtime Database listeners on other devices
-        val messageId = message.msgId
-        val chatMessage = ChatMessage(
-            id = messageId,
-            senderId = user.uid,
-            senderName = user.name,
-            senderImage = user.imageUri,
-            text = text,
-            timestamp = System.currentTimeMillis(),
-            fileUrl = fileUrl,
-            fileType = fileType
-        )
-        database.child("group_chats").child(groupId).child(messageId).setValue(chatMessage)
         
         // Update local state immediately for better UX
-        updateLocalMessages(groupId, chatMessage)
-
-        // Note: For actual FCM notifications to other users, you'd typically have a Firebase Cloud Function
-        // listening to 'group_chats/{groupId}/{messageId}' and sending to topic 'group_{groupId}'.
+        updateLocalMessages(groupId, mapAgoraMessageToChatMessage(message))
     }
 
     private fun updateLocalMessages(groupId: String, chatMsg: ChatMessage) {
